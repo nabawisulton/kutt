@@ -1,0 +1,20 @@
+User-agent: *
+Allow: /
+Disallow: /login
+Disallow: /dashboard
+Disallow: /members
+Disallow: /simpanan
+Disallow: /pinjaman
+Disallow: /kas
+Disallow: /akuntansi
+Disallow: /shu
+Disallow: /users
+Disallow: /cms
+Disallow: /settings
+Disallow: /notifications
+Disallow: /activity
+Disallow: /news
+Disallow: /api/
+Disallow: /verify/
+
+Sitemap: /sitemap.xml

@@ -1,0 +1,20 @@
+# KUTT SUKA MAKMUR - public/.htaccess (fallback saat document root bukan /public)
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+
+  RewriteCond %{REQUEST_FILENAME} -f [OR]
+  RewriteCond %{REQUEST_FILENAME} -d
+  RewriteRule ^ - [L]
+
+  RewriteRule ^ index.php [L]
+</IfModule>
+
+# Eksekusi PHP di folder upload harus tidak mungkin
+<FilesMatch "\.(php|phtml|php[0-9]|pht)$">
+  <IfModule mod_authz_core.c>
+    Require all denied
+  </IfModule>
+</FilesMatch>
+
+Options -Indexes

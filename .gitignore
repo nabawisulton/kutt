@@ -1,0 +1,17 @@
+# Environment (contain credentials)
+.env
+.env.local
+.env.*.local
+
+# Runtime storage & uploads
+storage/logs/*
+storage/uploads/*
+public/uploads/*
+!storage/logs/.gitkeep
+!storage/uploads/.gitkeep
+!public/uploads/.gitkeep
+!public/uploads/.htaccess
+
+# OS / editor
+.DS_Store
+Thumbs.db
