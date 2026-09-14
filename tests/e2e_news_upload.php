@@ -13,51 +13,13 @@ declare(strict_types=1);
 
 $base = rtrim($argv[1] ?? 'http://127.0.0.1:8080', '/');
 
-function http_req(string $url, ?string $body, array $headers, string &$jar): array
-{
-    $h = $headers;
-    if ($jar !== '') {
-        $h[] = 'Cookie: ' . $jar;
-    }
-    $ctx = stream_context_create(['http' => [
-        'method' => $body !== null ? 'POST' : 'GET',
-        'header' => implode("\r\n", $h) . "\r\n",
-        'content' => $body,
-        'ignore_errors' => true,
-        'follow_location' => 0,
-    ]]);
-    $resp = @file_get_contents($url, false, $ctx);
-    $code = 0;
-    $loc = '';
-    foreach ($http_response_header ?? [] as $hh) {
-        if (preg_match('#HTTP/\S+\s+(\d+)#', $hh, $m)) {
-            $code = (int) $m[1];
-        }
-        if (stripos($hh, 'Location:') === 0) {
-            $loc = trim(substr($hh, 9));
-        }
-        if (stripos($hh, 'Set-Cookie:') === 0) {
-            $pair = trim(explode(';', substr($hh, 11))[0]);
-            if (str_starts_with($pair, 'KUTTSESSID')) {
-                $jar = $pair; // simpan versi TERBARU (session_regenerate)
-            }
-        }
-    }
+require_once __DIR__ . '/http_client.php';
 
-    return [$code, $loc, (string) $resp];
-}
-
+$TEST_PASS = 'Adm1n-E2E-2026!';
 $jar = '';
-[, , $html] = http_req($base . '/login', null, [], $jar);
-if (!preg_match('/name="csrf_token" value="([a-f0-9]+)"/', $html, $m)) {
-    fwrite(STDERR, "FAIL: form login tidak punya csrf token\n");
-    exit(1);
-}
-[$cLogin, $locLogin] = http_req($base . '/login', http_build_query([
-    'username' => 'admin', 'password' => 'admin123', 'csrf_token' => $m[1],
-]), ['Content-Type: application/x-www-form-urlencoded'], $jar);
-echo "login=$cLogin loc=$locLogin\n";
-if ($cLogin !== 302 || !str_contains((string) $locLogin, '/dashboard')) {
+[$okLogin, $locLogin, $jar] = login_user($base, 'admin', 'admin123', $TEST_PASS, $jar);
+echo "login ok=" . ($okLogin ? '1' : '0') . " loc=$locLogin\n";
+if (!$okLogin) {
     fwrite(STDERR, "FAIL: login tidak sukses\n");
     exit(1);
 }
@@ -89,6 +51,8 @@ if ($cCreate !== 302 || !str_contains((string) $locCreate, '/news')) {
     fwrite(STDERR, "FAIL: create tidak 302->/news. Body head:\n" . substr($resp, 0, 300) . "\n");
     exit(1);
 }
+
+restore_password($base, 'admin123', $TEST_PASS, $jar);
 
 echo "E2E NEWS UPLOAD: PASS\n";
 exit(0);

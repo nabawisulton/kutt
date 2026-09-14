@@ -50,6 +50,11 @@ final class Auth
 
         Audit::log('LOGIN', 'User berhasil login: ' . $user['username']);
 
+        // Password bawaan seed harus diganti pada login pertama (keamanan).
+        if (password_verify('admin123', (string) $user['password_hash'])) {
+            self::setMustChangePassword(true);
+        }
+
         return true;
     }
 
@@ -85,6 +90,26 @@ final class Auth
         if (!self::check()) {
             flash_set('error', 'Silakan login terlebih dahulu.');
             redirect('/login');
+        }
+    }
+
+    /**
+     * Password masih bawaan seed (admin123)? Semua akses selain logout
+     * diarahkan ke /password/change sampai password diganti.
+     */
+    public static function mustChangePassword(): bool
+    {
+        return self::check()
+            && ($_SESSION['_must_change_password'] ?? false) === true;
+    }
+
+    /** Tandai/lepaskan flag "wajib ganti password" untuk user aktif. */
+    public static function setMustChangePassword(bool $required): void
+    {
+        if ($required) {
+            $_SESSION['_must_change_password'] = true;
+        } else {
+            unset($_SESSION['_must_change_password']);
         }
     }
 

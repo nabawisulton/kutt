@@ -290,6 +290,55 @@ final class UserController extends Controller
         redirect('/users');
     }
 
+    /**
+     * Halaman ganti password milik sendiri (dipaksa saat login pertama
+     * jika masih memakai password bawaan seed).
+     */
+    public function showChangePassword(): void
+    {
+        Auth::requireLogin();
+        $this->viewPlain('auth/change_password', [
+            'title' => 'Ganti Password - KUTT SUKA MAKMUR',
+        ]);
+    }
+
+    public function changePassword(): void
+    {
+        Auth::requireLogin();
+        Csrf::validate();
+        $me = (array) Auth::user();
+
+        $current = (string) ($_POST['current_password'] ?? '');
+        $new     = (string) ($_POST['new_password'] ?? '');
+        $confirm = (string) ($_POST['confirm_password'] ?? '');
+
+        if ($new !== $confirm) {
+            flash_set('error', 'Konfirmasi password baru tidak sama.');
+            redirect('/password/change');
+        }
+        if (mb_strlen($new) < 8) {
+            flash_set('error', 'Password baru minimal 8 karakter.');
+            redirect('/password/change');
+        }
+        if ($new === $current) {
+            flash_set('error', 'Password baru harus berbeda dari password lama.');
+            redirect('/password/change');
+        }
+
+        $row = User::find((int) $me['id']);
+        if ($row === null || !password_verify($current, (string) $row['password_hash'])) {
+            flash_set('error', 'Password saat ini salah.');
+            redirect('/password/change');
+        }
+
+        User::updatePasswordHash((int) $me['id'], password_hash($new, PASSWORD_DEFAULT));
+        Auth::setMustChangePassword(false);
+        Audit::log('UPDATE', 'User mengganti password miliknya sendiri: ' . $me['username'], 'USERS', (string) $me['id']);
+        flash_set('success', 'Password berhasil diperbarui. Terima kasih!');
+
+        redirect((string) $me['role'] === 'ANGGOTA' ? '/portal' : '/dashboard');
+    }
+
     public function exportExcel(): void
     {
         Roles::requirePermission('users');

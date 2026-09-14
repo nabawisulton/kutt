@@ -16,9 +16,26 @@
   RewriteRule ^ public/index.php [L]
 </IfModule>
 
-# Lindungi folder sensitif
-<FilesMatch "^(\.env|\.env\..*|composer\.(json|lock))$">
+# ---- LINDUNGI FILE SENSITIF (tidak boleh dilayani Apache) -------------------
+# .env / .env.local berisi kredensial database.
+<FilesMatch "^(\.env|\.env\..*|\.git.*)$">
   Require all denied
 </FilesMatch>
+
+# Source code & alat internal tidak perlu diakses via HTTP.
+<FilesMatch "^(install\.php|export_schema\.php)$">
+  Require all denied
+</FilesMatch>
+
+# Folder source/database/tests diblokir seluruhnya (bukan area web).
+RedirectMatch 403 ^/?(src|database|tests|storage|config)/
+
+# ---- SECURITY HEADERS --------------------------------------------------------
+<IfModule mod_headers.c>
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set X-Frame-Options "SAMEORIGIN"
+  Header always set Referrer-Policy "strict-origin-when-cross-origin"
+  Header always set Permissions-Policy "camera=(self), microphone=(), geolocation=()"
+</IfModule>
 
 Options -Indexes

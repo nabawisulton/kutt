@@ -13,6 +13,40 @@ declare(strict_types=1);
 
 session_start();
 
+// -----------------------------------------------------------------------------
+// KUNCI KEAMANAN INSTALLER
+// -----------------------------------------------------------------------------
+// 1. Jika .env sudah ada (aplikasi terpasang), installer langsung dikunci.
+// 2. Setelah instalasi sukses, file lock `storage/installed.lock` dibuat dan
+//    installer menolak berjalan lagi. Tidak perlu menghapus install.php manual
+//    (walau tetap direkomendasikan).
+// -----------------------------------------------------------------------------
+$lockFile = __DIR__ . '/storage/installed.lock';
+if (is_file($lockFile)) {
+    http_response_code(403);
+    exit(
+        '<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8"><title>Terkunci</title></head>'
+        . '<body style="font-family:sans-serif;background:#0f172a;color:#e2e8f0;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0">'
+        . '<div style="max-width:420px;text-align:center;padding:2rem">'
+        . '<div style="font-size:3rem">🔒</div>'
+        . '<h1 style="font-size:1.1rem">Installer Terkunci</h1>'
+        . '<p style="font-size:.85rem;line-height:1.6;color:#94a3b8">Aplikasi sudah terpasang. Untuk instalasi ulang, hapus file <code style="background:#1e293b;padding:2px 6px;border-radius:4px">storage/installed.lock</code> dari server terlebih dahulu.</p>'
+        . '</div></div></body></html>'
+    );
+}
+if (is_file(__DIR__ . '/.env')) {
+    http_response_code(403);
+    exit(
+        '<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8"><title>Terkunci</title></head>'
+        . '<body style="font-family:sans-serif;background:#0f172a;color:#e2e8f0;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0">'
+        . '<div style="max-width:420px;text-align:center;padding:2rem">'
+        . '<div style="font-size:3rem">🔒</div>'
+        . '<h1 style="font-size:1.1rem">Installer Terkunci</h1>'
+        . '<p style="font-size:.85rem;line-height:1.6;color:#94a3b8">File konfigurasi <code style="background:#1e293b;padding:2px 6px;border-radius:4px">.env</code> sudah ada — aplikasi terdeteksi terpasang. Hapus <code style="background:#1e293b;padding:2px 6px;border-radius:4px">.env</code> jika Anda benar-benar ingin menginstal ulang.</p>'
+        . '</div></div></body></html>'
+    );
+}
+
 $baseDir = dirname(__DIR__ ?? '') ?: dirname(__FILE__);
 $baseDir = __DIR__;
 $step = (int) ($_GET['step'] ?? 1);
@@ -148,6 +182,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         if ($errors === []) {
+            // Kunci installer: instalasi sudah selesai.
+            @mkdir(__DIR__ . '/storage', 0775, true);
+            @file_put_contents($lockFile, 'installed at ' . date('c') . "\n");
             header('Location: ?step=done');
             exit;
         }
@@ -188,7 +225,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           <h2 class="font-bold">Instalasi Selesai!</h2>
           <p class="text-xs text-slate-600">Aplikasi siap digunakan. Silakan login ke dashboard admin.</p>
           <div class="rounded-xl bg-yellow-50 border border-yellow-300 text-yellow-800 text-[11px] p-3 text-left">
-            <strong><i class="fa-solid fa-triangle-exclamation mr-1"></i>KEAMANAN:</strong> hapus file <code>install.php</code> dari server sekarang.
+            <strong><i class="fa-solid fa-lock mr-1"></i>Installer sudah dikunci otomatis</strong> (file <code>storage/installed.lock</code>).
+            Untuk lapis ganda: hapus juga file <code>install.php</code> dari server.
           </div>
           <a href="public/index.php" class="inline-block px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold shadow">Buka Aplikasi</a>
         </div>

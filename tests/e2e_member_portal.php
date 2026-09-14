@@ -15,17 +15,11 @@ $base = rtrim($argv[1] ?? 'http://127.0.0.1:8080', '/');
 
 require_once __DIR__ . '/http_client.php';
 
+$TEST_PASS = 'Angg0ta-E2E-2026!';
 $jar = '';
-[, , $html] = http_req($base . '/login', null, [], $jar);
-if (!preg_match('/name="csrf_token" value="([a-f0-9]+)"/', $html, $m)) {
-    fwrite(STDERR, "FAIL: form login tanpa csrf token\n");
-    exit(1);
-}
-[$cLogin, $locLogin] = http_req($base . '/login', http_build_query([
-    'username' => 'anggota', 'password' => 'admin123', 'csrf_token' => $m[1],
-]), ['Content-Type: application/x-www-form-urlencoded'], $jar);
-if ($cLogin !== 302 || !str_contains((string) $locLogin, '/dashboard')) {
-    fwrite(STDERR, "FAIL: login anggota tidak sukses ($cLogin $locLogin)\n");
+[$okLogin, $locLogin, $jar] = login_user($base, 'anggota', 'admin123', $TEST_PASS, $jar);
+if (!$okLogin) {
+    fwrite(STDERR, "FAIL: login anggota tidak sukses: $locLogin\n");
     exit(1);
 }
 
@@ -102,6 +96,8 @@ try {
     // Cleanup bersifat best-effort; jangan gagalkan test karena DB tidak aktif.
     fwrite(STDERR, 'warn: cleanup dilewati: ' . $e->getMessage() . "\n");
 }
+
+restore_password($base, 'admin123', $TEST_PASS, $jar);
 
 echo "E2E MEMBER PORTAL: PASS\n";
 exit(0);

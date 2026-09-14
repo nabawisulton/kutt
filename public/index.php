@@ -22,12 +22,24 @@ use App\Controllers\NewsController;
 use App\Controllers\PortalController;
 use App\Controllers\PublicNewsController;
 use App\Controllers\UserController;
+use App\Core\Auth;
 use App\Controllers\ReportController;
 use App\Controllers\SettingsController;
 use App\Controllers\SupportController;
 use App\Core\Router;
 
 $router = new Router();
+
+// Guard keamanan global: password masih bawaan seed? Paksa ganti dulu.
+// (Kecuali route ganti password/logout sendiri yang didefinisikan di bawah.)
+if (Auth::mustChangePassword()) {
+    $path = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
+    $allowed = ['/password/change', '/logout'];
+    if (!in_array($path, $allowed, true)) {
+        header('Location: /password/change');
+        exit;
+    }
+}
 
 // Portal landing page (desain legacy GAS, konten dari MySQL).
 $router->get('/', PortalController::class, 'index');
@@ -39,6 +51,10 @@ $router->get('/dashboard', DashboardController::class, 'index');
 $router->get('/login', AuthController::class, 'showLogin');
 $router->post('/login', AuthController::class, 'login');
 $router->post('/logout', AuthController::class, 'logout');
+
+// Ganti password milik sendiri (wajib saat login pertama dengan password seed)
+$router->get('/password/change', UserController::class, 'showChangePassword');
+$router->post('/password/change', UserController::class, 'changePassword');
 
 // Dashboard
 // Dashboard exports
