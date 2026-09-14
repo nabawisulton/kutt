@@ -113,7 +113,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 header('Location: ?step=3');
                 exit;
             } catch (PDOException $e) {
-                $errors[] = 'Koneksi database gagal: ' . $e->getMessage();
+                // Jangan tampilkan pesan PDO mentah (bisa memuat host/user).
+                error_log('[KUTT][install] DB connect failed: ' . $e->getMessage());
+                $errors[] = 'Koneksi database gagal. Periksa kembali host, nama database, user, dan password.';
             }
         }
         $step = 2;
@@ -177,7 +179,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $ok[] = 'Akun admin dibuat: ' . $username;
                 }
             } catch (PDOException $e) {
-                $errors[] = 'Gagal membuat admin: ' . $e->getMessage();
+                error_log('[KUTT][install] admin create failed: ' . $e->getMessage());
+                $errors[] = 'Gagal membuat akun admin. Periksa log server untuk detail.';
             }
         }
 

@@ -66,8 +66,11 @@ Buka `http://localhost:8080` — portal publik. Dashboard di `/login`.
 | bendahara | admin123 | BENDAHARA   |
 | ketua     | admin123 | KETUA       |
 | staff     | admin123 | STAFF       |
+| anggota   | admin123 | ANGGOTA (demo portal anggota) |
 
-> Wajib ganti password default setelah login pertama (menu Kelola User).
+> **WAJIB GANTI PASSWORD**: setiap akun yang login dengan password bawaan
+> `admin123` otomatis diarahkan ke halaman **Ganti Password** dan tidak dapat
+> membuka modul lain sebelum menggantinya (min. 8 karakter).
 
 ## Instalasi di cPanel
 
@@ -96,14 +99,25 @@ Buka `http://localhost:8080` — portal publik. Dashboard di `/login`.
      `DROP TABLE IF EXISTS` dan akan MENGGANTI tabel yang sudah ada.
 6. **Tanpa document root khusus**: pastikan `.htaccess` di root folder memuat
    rewrite ke `public/index.php` (file `public_html/.htaccess` contoh tersedia).
-7. Buka domain — portal publik tampil, login admin di `/login`.
-8. **Hapus `install.php` setelah instalasi sukses.**
+7. **Permissions**: folder `storage/` dan `public/uploads/` harus bisa ditulis
+   (permission `755` pada folder sudah cukup di cPanel; tidak perlu `777`).
+8. Buka domain — portal publik tampil, login admin di `/login`.
+9. **Installer terkunci otomatis**: setelah instalasi sukses, `install.php`
+   menulis `storage/installed.lock` dan menolak dijalankan lagi. Untuk
+   lapis ganda, hapus juga `install.php` dari server.
+10. **SSL/HTTPS**: aktifkan AutoSSL/Let's Encrypt di cPanel sebelum dipakai —
+   cookie session otomatis mengikat `Secure` saat request HTTPS.
+11. **Login pertama**: setiap akun dengan password bawaan `admin123` dipaksa
+   membuat password baru (min. 8 karakter) sebelum bisa melanjutkan.
 
 ### Installer web (opsional)
 
 Buka `https://domain-anda/install.php` — memeriksa versi PHP & ekstensi,
 menguji koneksi DB, menjalankan migrasi, dan membuat akun admin pertama.
-File ini **wajib dihapus** setelah instalasi.
+**Setelah instalasi sukses installer terkunci sendiri** (file
+`storage/installed.lock`); ia juga menolak berjalan bila `.env` sudah ada.
+Untuk instalasi ulang: hapus `storage/installed.lock` (dan `.env`) via File
+Manager. File `install.php` boleh dihapus dari server sebagai lapis ganda.
 
 ## Keamanan
 

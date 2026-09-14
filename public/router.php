@@ -14,7 +14,7 @@ $path = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
 $file = __DIR__ . $path;
 
 // Guard dev: file sensitif tidak boleh dilayani lewat server built-in.
-if (preg_match('#^/(\.env|install\.php|src|database|tests|storage)#', $path)) {
+if (preg_match('#^/(\.env|install\.php|src|database|tests|storage|vendor|scripts|config)(/|$|\.)#', $path)) {
     http_response_code(403);
     exit('Forbidden');
 }

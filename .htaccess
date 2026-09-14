@@ -28,7 +28,7 @@
 </FilesMatch>
 
 # Folder source/database/tests diblokir seluruhnya (bukan area web).
-RedirectMatch 403 ^/?(src|database|tests|storage|config)/
+RedirectMatch 403 ^/?(src|database|tests|storage|config|vendor|scripts)/
 
 # ---- SECURITY HEADERS --------------------------------------------------------
 <IfModule mod_headers.c>
