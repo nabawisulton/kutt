@@ -8,6 +8,7 @@ use App\Core\Csrf;
 
 $brandName = \App\Models\Setting::get('brandName', config('app.name'));
 $logoIcon = \App\Models\Setting::get('logoIcon', config('app.logo_icon'));
+$logoImage = (string) \App\Models\Setting::get('logoImage', '');
 ?>
 <!DOCTYPE html>
 <html lang="id" class="h-full bg-slate-50 scroll-smooth">
@@ -16,7 +17,14 @@ $logoIcon = \App\Models\Setting::get('logoIcon', config('app.logo_icon'));
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title><?= e($title ?? 'Login') ?> - <?= e($brandName) ?></title>
-  <link rel="icon" href="data:,">
+  <?php if (is_file(BASE_PATH . '/public/favicon.ico')): ?>
+    <link rel="icon" href="/favicon.ico" sizes="any">
+  <?php else: ?>
+    <link rel="icon" href="data:,">
+  <?php endif; ?>
+  <?php if (is_file(BASE_PATH . '/public/apple-touch-icon.png')): ?>
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <?php endif; ?>
 
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -57,8 +65,12 @@ $logoIcon = \App\Models\Setting::get('logoIcon', config('app.logo_icon'));
   <div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-brand-700 via-brand-600 to-emerald-800 px-4">
     <div class="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-5">
       <div class="text-center space-y-1">
-        <div class="w-12 h-12 mx-auto rounded-xl bg-gradient-to-tr from-brand-600 to-brand-500 flex items-center justify-center text-white shadow-md overflow-hidden">
-          <i class="<?= e($logoIcon) ?> text-xl"></i>
+        <div class="w-12 h-12 mx-auto rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center shadow-md overflow-hidden">
+          <?php if ($logoImage !== ''): ?>
+            <img src="<?= e($logoImage) ?>" alt="Logo" class="w-full h-full object-contain">
+          <?php else: ?>
+            <i class="<?= e($logoIcon) ?> text-xl text-brand-600 dark:text-brand-500"></i>
+          <?php endif; ?>
         </div>
         <h2 class="font-display text-base font-bold text-slate-800 dark:text-slate-100">Login Portal KUTT</h2>
         <p class="text-[11px] text-slate-500">Masuk sesuai akun Anda: Admin, Ketua, Bendahara, atau Staff</p>

@@ -59,6 +59,66 @@ final class SettingsController extends Controller
         redirect('/settings');
     }
 
+    /**
+     * Aset brand: logo (PNG transparan), paket ikon/favicon + PWA, dan gambar
+     * share Open Graph (1200x630). Favicon/ikon ditulis langsung ke public/;
+     * logo & OG disimpan sebagai path di tabel settings.
+     */
+    public function saveAssets(): void
+    {
+        Roles::requirePermission('settings.manage');
+        Csrf::validate();
+
+        $user = (array) Auth::user();
+        $touched = [];
+
+        try {
+            if (($_POST['remove_logo'] ?? '') === '1') {
+                Uploader::delete(Setting::get('logoImage', '') ?? '');
+                Setting::set('logoImage', '', (int) $user['id']);
+                $touched[] = 'logo dihapus';
+            }
+
+            $logoPath = Uploader::brandImage($_FILES['logo_image'] ?? null, 'branding', 512);
+            if ($logoPath !== null) {
+                Uploader::delete(Setting::get('logoImage', '') ?? '');
+                Setting::set('logoImage', $logoPath, (int) $user['id']);
+                $touched[] = 'logo diperbarui';
+            }
+
+            Uploader::iconSet($_FILES['favicon_image'] ?? null);
+            if (($_FILES['favicon_image']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE) {
+                $touched[] = 'favicon + ikon PWA diperbarui';
+            }
+
+            if (($_POST['remove_og'] ?? '') === '1') {
+                Uploader::delete(Setting::get('ogImagePath', '') ?? '');
+                Setting::set('ogImagePath', '', (int) $user['id']);
+                $touched[] = 'gambar OG dihapus';
+            }
+
+            $ogPath = Uploader::ogCover($_FILES['og_image'] ?? null);
+            if ($ogPath !== null) {
+                Uploader::delete(Setting::get('ogImagePath', '') ?? '');
+                Setting::set('ogImagePath', $ogPath, (int) $user['id']);
+                $touched[] = 'gambar share (OG) diperbarui';
+            }
+        } catch (RuntimeException $e) {
+            flash_set('error', $e->getMessage());
+            redirect('/settings');
+        }
+
+        if ($touched === []) {
+            flash_set('info', 'Tidak ada perubahan: pilih file terlebih dahulu.');
+            redirect('/settings');
+        }
+
+        Audit::log('UPDATE', 'Aset brand diperbarui: ' . implode(', ', $touched), 'SETTINGS');
+        \App\Models\Notification::push('Aset brand diperbarui', 'Logo/favicon/gambar share diperbarui oleh ' . $user['username'] . '.', 'INFO', '/settings', ['role' => \App\Core\Roles::ADMIN]);
+        flash_set('success', 'Aset brand berhasil diperbarui (' . implode(', ', $touched) . ').');
+        redirect('/settings');
+    }
+
     public function saveCardBackground(): void
     {
         Roles::requirePermission('settings.manage');

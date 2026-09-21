@@ -276,11 +276,400 @@ if ($dbUp) {
 
         return isset($card['verify_code']) && strlen((string) $card['verify_code']) === 32;
     });
+
+    // ---------------- Saldo Anggota (wallet + PIN) ----------------
+
+    $record('DB: wallet tables exist with expected columns', function (): bool {
+        foreach (
+            ['member_wallets' => ['member_id', 'balance', 'pin_hash'], 'wallet_transactions' => ['transaction_no', 'amount', 'balance_before'], 'topup_requests' => ['request_no', 'amount', 'status']]
+            as $table => $cols
+        ) {
+            foreach ($cols as $col) {
+                if (Database::scalar(
+                    'SELECT COUNT(*) FROM information_schema.COLUMNS
+                     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?',
+                    [$table, $col]
+                ) == 0) {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    });
+
+    $record('Wallet: ensure creates balance-0 wallet once', function (): bool {
+        $id = (int) Database::scalar('SELECT id FROM members LIMIT 1');
+        if ($id === 0) {
+            return true;
+        }
+        $w1 = App\Models\MemberWallet::ensure($id);
+        $w2 = App\Models\MemberWallet::ensure($id);
+
+        return (int) $w1['member_id'] === $id
+            && (int) Database::scalar('SELECT COUNT(*) FROM member_wallets WHERE member_id = ?', [$id]) === 1
+            && (float) $w2['balance'] >= 0;
+    });
+
+    $record('Wallet: PIN set + verify (hash, bukan plaintext)', function (): bool {
+        $id = (int) Database::scalar('SELECT id FROM members LIMIT 1');
+        if ($id === 0) {
+            return true;
+        }
+        // Reset agar test idempoten terhadap DB yang persisten.
+        Database::exec('UPDATE member_wallets SET pin_hash = NULL, pin_attempts = 0, pin_locked_until = NULL WHERE member_id = ?', [$id]);
+        App\Models\MemberWallet::setPin($id, '482913');
+        $hash = (string) Database::scalar('SELECT pin_hash FROM member_wallets WHERE member_id = ?', [$id]);
+
+        return App\Models\MemberWallet::verifyPin($id, '482913') === true
+            && str_starts_with($hash, '$2') // bcrypt
+            && !str_contains($hash, '482913');
+    });
+
+    $record('Wallet: PIN salah ditolak + lockout setelah 5x', function (): bool {
+        $id = (int) Database::scalar('SELECT id FROM members LIMIT 1');
+        if ($id === 0) {
+            return true;
+        }
+        // Reset lalu set PIN segar (test idempoten).
+        Database::exec('UPDATE member_wallets SET pin_hash = NULL, pin_attempts = 0, pin_locked_until = NULL WHERE member_id = ?', [$id]);
+        App\Models\MemberWallet::setPin($id, '135790');
+        $rejected = false;
+        for ($i = 0; $i < 5; $i++) {
+            try {
+                App\Models\MemberWallet::verifyPin($id, '000000');
+            } catch (RuntimeException $e) {
+                $rejected = true;
+            }
+        }
+        $locked = false;
+        try {
+            App\Models\MemberWallet::verifyPin($id, '135790'); // PIN benar tapi harus terkunci
+        } catch (RuntimeException $e) {
+            $locked = str_contains($e->getMessage(), 'terkunci');
+        }
+        // Bersihkan lock untuk pengujian berikutnya.
+        Database::exec('UPDATE member_wallets SET pin_attempts = 0, pin_locked_until = NULL WHERE member_id = ?', [$id]);
+
+        return $rejected && $locked;
+    });
+
+    $record('Wallet: apply kredit/debit + ledger + tolak saldo minus', function (): bool {
+        $id = (int) Database::scalar('SELECT id FROM members LIMIT 1');
+        if ($id === 0) {
+            return true;
+        }
+        Database::exec('UPDATE member_wallets SET balance = 0 WHERE member_id = ?', [$id]);
+
+        Database::beginTransaction();
+        $up = App\Models\MemberWallet::apply($id, 500000, 'TOPUP', 'Test top up', 'TEST-TOP');
+        Database::commit();
+
+        Database::beginTransaction();
+        $down = App\Models\MemberWallet::apply($id, -150000, 'PEMBAYARAN', 'Test bayar', 'TEST-BAYAR');
+        Database::commit();
+
+        $over = false;
+        Database::beginTransaction();
+        try {
+            App\Models\MemberWallet::apply($id, -99999999, 'PEMBAYARAN', 'Test minus', 'TEST-MINUS');
+            Database::rollBack();
+        } catch (RuntimeException $e) {
+            Database::rollBack();
+            $over = str_contains($e->getMessage(), 'tidak mencukupi');
+        }
+
+        $ledgerCount = (int) Database::scalar('SELECT COUNT(*) FROM wallet_transactions WHERE member_id = ?', [$id]);
+        $ledgerOk = $ledgerCount >= 2; // TOPUP + PEMBAYARAN; minus ditolak → tidak jadi baris
+        Database::exec('DELETE FROM wallet_transactions WHERE reference LIKE "TEST-%"');
+        Database::exec('UPDATE member_wallets SET balance = 0 WHERE member_id = ?', [$id]);
+
+        return abs(($up['balance_after'] - 500000)) < 0.01
+            && abs(($down['balance_after'] - 350000)) < 0.01
+            && $over
+            && $ledgerOk;
+    });
+
+    $record('Wallet: pengajuan top up PENDING tidak mengubah saldo', function (): bool {
+        $id = (int) Database::scalar('SELECT id FROM members LIMIT 1');
+        if ($id === 0) {
+            return true;
+        }
+        $before = App\Models\MemberWallet::balance($id);
+        $reqId = App\Models\MemberWallet::createTopupRequest($id, 75000, 'Test pengajuan', null);
+        $req = App\Models\MemberWallet::findTopup($reqId);
+        $after = App\Models\MemberWallet::balance($id);
+        Database::exec('DELETE FROM topup_requests WHERE id = ?', [$reqId]);
+
+        return $req !== null && $req['status'] === 'PENDING' && abs($before - $after) < 0.01;
+    });
+
+    $record('Sale: pembayaran SALDO + refund otomatis saat dibatalkan', function (): bool {
+        $memberId = (int) Database::scalar('SELECT id FROM members LIMIT 1');
+        $product = Database::first('SELECT id, price, stock FROM products WHERE is_active = 1 AND stock >= 10 ORDER BY id LIMIT 1');
+        if ($memberId === 0 || $product === null) {
+            return true; // data belum siap — skip secara efektif
+        }
+        $pid = (int) $product['id'];
+        $price = (float) $product['price'];
+        $stock0 = (int) $product['stock'];
+        Database::exec('UPDATE member_wallets SET balance = 0 WHERE member_id = ?', [$memberId]);
+        Database::beginTransaction();
+        App\Models\MemberWallet::apply($memberId, 500000, 'TOPUP', 'Test e2e topup', 'TEST-E2E');
+        Database::commit();
+
+        [$orderId, $orderNo] = App\Models\Sale::createOrder([
+            'channel'        => 'POS',
+            'buyer_name'     => 'Test E2E',
+            'payment_method' => 'SALDO',
+            'member_id'      => $memberId,
+            'status'         => 'COMPLETED',
+        ], [['product_id' => $pid, 'quantity' => 2]], 0);
+
+        $paid = App\Models\MemberWallet::balance($memberId);
+        $stockAfterSale = (int) Database::scalar('SELECT stock FROM products WHERE id = ?', [$pid]);
+
+        App\Models\Sale::setStatus($orderId, 'CANCELLED', 0);
+
+        $refunded = App\Models\MemberWallet::balance($memberId);
+        $stockAfterCancel = (int) Database::scalar('SELECT stock FROM products WHERE id = ?', [$pid]);
+
+        $refundRows = (int) Database::scalar(
+            'SELECT COUNT(*) FROM wallet_transactions WHERE member_id = ? AND type = ? AND reference = ?',
+            [$memberId, 'REFUND', $orderNo]
+        );
+
+        // Cleanup penuh: order + item, ledger, movement, saldo & stok kembali.
+        Database::exec('DELETE FROM sales_order_items WHERE order_id = ?', [$orderId]);
+        Database::exec('DELETE FROM sales_orders WHERE id = ?', [$orderId]);
+        Database::exec('DELETE FROM wallet_transactions WHERE member_id = ? AND reference IN (?, ?)', [$memberId, 'TEST-E2E', $orderNo]);
+        Database::exec('DELETE FROM stock_movements WHERE reference = ?', [$orderNo]);
+        Database::exec('UPDATE member_wallets SET balance = 0 WHERE member_id = ?', [$memberId]);
+        Database::exec('UPDATE products SET stock = ? WHERE id = ?', [$stock0, $pid]);
+
+        return abs($paid - (500000 - 2 * $price)) < 0.01            // saldo terpotong saat bayar
+            && $stockAfterSale === $stock0 - 2                       // stok terpotong saat bayar
+            && abs($refunded - 500000) < 0.01                        // saldo kembali penuh saat batal
+            && $stockAfterCancel === $stock0                         // stok kembali saat batal
+            && $refundRows === 1;                                    // tepat SATU baris REFUND
+    });
+
+    $record('Sale: destroy() order CANCELLED tidak me-refund ganda', function (): bool {
+        $memberId = (int) Database::scalar('SELECT id FROM members LIMIT 1');
+        $product = Database::first('SELECT id, price, stock FROM products WHERE is_active = 1 AND stock >= 10 ORDER BY id LIMIT 1');
+        if ($memberId === 0 || $product === null) {
+            return true;
+        }
+        $pid = (int) $product['id'];
+        $stock0 = (int) $product['stock'];
+        Database::exec('UPDATE member_wallets SET balance = 0 WHERE member_id = ?', [$memberId]);
+        Database::beginTransaction();
+        App\Models\MemberWallet::apply($memberId, 500000, 'TOPUP', 'Test e2e topup', 'TEST-E2E');
+        Database::commit();
+
+        [$orderId, $orderNo] = App\Models\Sale::createOrder([
+            'channel'        => 'POS',
+            'buyer_name'     => 'Test E2E Destroy',
+            'payment_method' => 'SALDO',
+            'member_id'      => $memberId,
+            'status'         => 'COMPLETED',
+        ], [['product_id' => $pid, 'quantity' => 2]], 0);
+
+        $afterPay = App\Models\MemberWallet::balance($memberId);
+        App\Models\Sale::setStatus($orderId, 'CANCELLED', 0); // refund pertama di sini
+        $afterCancel = App\Models\MemberWallet::balance($memberId);
+
+        App\Models\Sale::destroy($orderId, 0); // hapus permanen — TIDAK boleh refund lagi
+
+        $afterDestroy = App\Models\MemberWallet::balance($memberId);
+        $refundRows = (int) Database::scalar(
+            'SELECT COUNT(*) FROM wallet_transactions WHERE member_id = ? AND type = ? AND reference = ?',
+            [$memberId, 'REFUND', $orderNo]
+        );
+        $orderGone = (int) Database::scalar('SELECT COUNT(*) FROM sales_orders WHERE id = ?', [$orderId]) === 0;
+
+        // Cleanup ledger & saldo (order sudah terhapus oleh destroy).
+        Database::exec('DELETE FROM wallet_transactions WHERE member_id = ? AND reference IN (?, ?)', [$memberId, 'TEST-E2E', $orderNo]);
+        Database::exec('DELETE FROM stock_movements WHERE reference = ?', [$orderNo]);
+        Database::exec('UPDATE member_wallets SET balance = 0 WHERE member_id = ?', [$memberId]);
+        Database::exec('UPDATE products SET stock = ? WHERE id = ?', [$stock0, $pid]);
+
+        return abs($afterPay - ($afterCancel - 2 * (float) $product['price'])) < 0.01 // refund sekali saat batal
+            && abs($afterDestroy - $afterCancel) < 0.01                               // saldo tidak berubah lagi saat dihapus
+            && $refundRows === 1                                                      // tidak ada REFUND kedua
+            && $orderGone;                                                            // order + item benar-benar terhapus
+    });
+
+    $record('Sale: order marketplace NEW kedaluwarsa > 24 jam (stok kembali)', function (): bool {
+        $product = Database::first('SELECT id, stock FROM products WHERE is_active = 1 AND stock >= 10 ORDER BY id LIMIT 1');
+        if ($product === null) {
+            return true;
+        }
+        $pid = (int) $product['id'];
+        $stock0 = (int) $product['stock'];
+
+        // Order NEW channel MARKETPLACE — stok langsung dipotong (3 unit).
+        [$staleId, $staleNo] = App\Models\Sale::createOrder([
+            'channel'        => 'MARKETPLACE',
+            'buyer_name'     => 'Test Expire',
+            'payment_method' => 'COD',
+            'status'         => 'NEW',
+        ], [['product_id' => $pid, 'quantity' => 3]], 0);
+
+        // Order fresh lain — TIDAK boleh ikut ter-expire.
+        [$freshId, $freshNo] = App\Models\Sale::createOrder([
+            'channel'        => 'MARKETPLACE',
+            'buyer_name'     => 'Test Expire Fresh',
+            'payment_method' => 'COD',
+            'status'         => 'NEW',
+        ], [['product_id' => $pid, 'quantity' => 1]], 0);
+
+        // Jadikan order pertama stale (25 jam lalu).
+        Database::exec('UPDATE sales_orders SET created_at = DATE_SUB(NOW(), INTERVAL 25 HOUR) WHERE id = ?', [$staleId]);
+
+        $expired = App\Models\Sale::expireStaleNewOrders();
+
+        $staleStatus = (string) Database::scalar('SELECT status FROM sales_orders WHERE id = ?', [$staleId]);
+        $freshStatus = (string) Database::scalar('SELECT status FROM sales_orders WHERE id = ?', [$freshId]);
+        $stockAfter = (int) Database::scalar('SELECT stock FROM products WHERE id = ?', [$pid]);
+
+        // Cleanup penuh.
+        Database::exec('DELETE FROM sales_order_items WHERE order_id IN (?, ?)', [$staleId, $freshId]);
+        Database::exec('DELETE FROM sales_orders WHERE id IN (?, ?)', [$staleId, $freshId]);
+        Database::exec('DELETE FROM stock_movements WHERE reference IN (?, ?)', [$staleNo, $freshNo]);
+        Database::exec('UPDATE products SET stock = ? WHERE id = ?', [$stock0, $pid]);
+
+        return $expired >= 1
+            && $staleStatus === 'CANCELLED'   // stale dibatalkan
+            && $freshStatus === 'NEW'         // fresh tidak tersentuh
+            && $stockAfter === $stock0 - 1;   // stok stale kembali, fresh masih menahan 1
+    });
+
+    $record('Sale: pembayaran TABUNGAN + refund otomatis saat dibatalkan', function (): bool {
+        $acctId = (int) Database::scalar("SELECT id FROM cash_savings_accounts WHERE account_no = 'TBG-0001'");
+        $product = Database::first('SELECT id, price, stock FROM products WHERE is_active = 1 AND stock >= 10 ORDER BY id LIMIT 1');
+        if ($acctId === 0 || $product === null) {
+            return true; // data belum siap — skip secara efektif
+        }
+        $pid = (int) $product['id'];
+        $price = (float) $product['price'];
+        $stock0 = (int) $product['stock'];
+        Database::exec('UPDATE cash_savings_accounts SET balance = 0 WHERE id = ?', [$acctId]);
+        Database::beginTransaction();
+        App\Models\Savings::apply($acctId, 'SETOR', 500000, null, 'Test e2e tabungan topup', null, 'KAS');
+        Database::commit();
+
+        [$orderId, $orderNo] = App\Models\Sale::createOrder([
+            'channel'            => 'POS',
+            'buyer_name'         => 'Test E2E Tabungan',
+            'payment_method'     => 'TABUNGAN',
+            'savings_account_id' => $acctId,
+            'status'             => 'COMPLETED',
+        ], [['product_id' => $pid, 'quantity' => 2]], 0);
+
+        $paid = (float) Database::scalar('SELECT balance FROM cash_savings_accounts WHERE id = ?', [$acctId]);
+        $stockAfterSale = (int) Database::scalar('SELECT stock FROM products WHERE id = ?', [$pid]);
+
+        App\Models\Sale::setStatus($orderId, 'CANCELLED', 0);
+
+        $refunded = (float) Database::scalar('SELECT balance FROM cash_savings_accounts WHERE id = ?', [$acctId]);
+        $stockAfterCancel = (int) Database::scalar('SELECT stock FROM products WHERE id = ?', [$pid]);
+
+        $refundRows = (int) Database::scalar(
+            "SELECT COUNT(*) FROM cash_savings_transactions WHERE account_id = ? AND type = 'REFUND' AND reference_id = ?",
+            [$acctId, $orderId]
+        );
+
+        // Cleanup penuh: order + item, ledger, movement, saldo & stok kembali.
+        Database::exec('DELETE FROM sales_order_items WHERE order_id = ?', [$orderId]);
+        Database::exec('DELETE FROM sales_orders WHERE id = ?', [$orderId]);
+        Database::exec("DELETE FROM cash_savings_transactions WHERE account_id = ? AND (reference_id = ? OR description LIKE 'Test e2e tabungan%')", [$acctId, $orderId]);
+        Database::exec('DELETE FROM stock_movements WHERE reference = ?', [$orderNo]);
+        Database::exec('UPDATE cash_savings_accounts SET balance = 0 WHERE id = ?', [$acctId]);
+        Database::exec('UPDATE products SET stock = ? WHERE id = ?', [$stock0, $pid]);
+
+        return abs($paid - (500000 - 2 * $price)) < 0.01            // saldo tabungan terpotong saat bayar
+            && $stockAfterSale === $stock0 - 2                       // stok terpotong saat bayar
+            && abs($refunded - 500000) < 0.01                        // saldo tabungan kembali saat batal
+            && $stockAfterCancel === $stock0                         // stok kembali saat batal
+            && $refundRows === 1;                                    // tepat SATU baris REFUND
+    });
+
+    $record('Savings: akun default + apply SETOR/TARIK + saldo tidak minus', function (): bool {
+        $acctId = (int) Database::scalar("SELECT id FROM cash_savings_accounts WHERE account_no = 'TBG-0001'");
+        if ($acctId === 0) {
+            return false;
+        }
+        Database::exec('UPDATE cash_savings_accounts SET balance = 0 WHERE id = ?', [$acctId]);
+
+        $in = App\Models\Savings::apply($acctId, 'SETOR', 300000, null, 'Test setor', null, 'KAS');
+        $out = App\Models\Savings::apply($acctId, 'TARIK', 100000, null, 'Test tarik', null, 'KAS');
+
+        $over = false;
+        try {
+            Database::beginTransaction();
+            App\Models\Savings::apply($acctId, 'TARIK', 999999999, null, 'Test minus', null, 'KAS');
+            Database::rollBack();
+        } catch (\RuntimeException $e) {
+            Database::rollBack();
+            $over = true;
+        }
+
+        $ledgerOk = (int) Database::scalar(
+            "SELECT COUNT(*) FROM cash_savings_transactions WHERE account_id = ? AND description LIKE 'Test %'",
+            [$acctId]
+        ) >= 2;
+        Database::exec("DELETE FROM cash_savings_transactions WHERE description LIKE 'Test %'");
+        Database::exec('UPDATE cash_savings_accounts SET balance = 0 WHERE id = ?', [$acctId]);
+
+        return abs(($in['balance_after'] - 300000)) < 0.01
+            && abs(($out['balance_after'] - 200000)) < 0.01
+            && $over && $ledgerOk;
+    });
+
+    $record('Savings: adjust() dua arah dengan keterangan', function (): bool {
+        $acctId = (int) Database::scalar("SELECT id FROM cash_savings_accounts WHERE account_no = 'TBG-0001'");
+        if ($acctId === 0) {
+            return false;
+        }
+        Database::exec('UPDATE cash_savings_accounts SET balance = 0 WHERE id = ?', [$acctId]);
+
+        Database::beginTransaction();
+        App\Models\Savings::adjust($acctId, 50000, 'Test koreksi +', null);
+        $mid = App\Models\Savings::find($acctId);
+        App\Models\Savings::adjust($acctId, -20000, 'Test koreksi -', null);
+        Database::commit();
+        $after = App\Models\Savings::find($acctId);
+
+        $negBlocked = false;
+        try {
+            Database::beginTransaction();
+            App\Models\Savings::adjust($acctId, -999999999, 'Test minus', null);
+            Database::rollBack();
+        } catch (\RuntimeException $e) {
+            Database::rollBack();
+            $negBlocked = true;
+        }
+
+        Database::exec("DELETE FROM cash_savings_transactions WHERE description LIKE 'Test koreksi%'");
+        Database::exec('UPDATE cash_savings_accounts SET balance = 0 WHERE id = ?', [$acctId]);
+
+        return abs((float) $mid['balance'] - 50000) < 0.01
+            && abs((float) $after['balance'] - 30000) < 0.01
+            && $negBlocked;
+    });
 } else {
     foreach ([
         'DB: news_posts schema matches model', 'DB: notifications has role+link', 'DB: audit_logs columns',
         'DB: member_cards.verify_code width', 'Notification::latestFor', 'Notification::push writes',
         'Audit::log writes', 'News::paginate', 'News::publicList', 'Member::finance', 'Card::issue token',
+        'DB: wallet tables', 'Wallet: ensure', 'Wallet: PIN hash', 'Wallet: PIN lockout',
+        'Wallet: apply ledger', 'Wallet: topup request',
+        'Sale: pembayaran SALDO + refund otomatis saat dibatalkan',
+        'Sale: destroy() order CANCELLED tidak me-refund ganda',
+        'Sale: order marketplace NEW kedaluwarsa > 24 jam (stok kembali)',
+        'Sale: pembayaran TABUNGAN + refund otomatis saat dibatalkan',
+        'Savings: akun default + apply SETOR/TARIK + saldo tidak minus', 'Savings: adjust() dua arah dengan keterangan',
     ] as $skipped) {
         $results[$skipped] = 'SKIP';
     }

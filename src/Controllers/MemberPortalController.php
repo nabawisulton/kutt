@@ -11,6 +11,7 @@ use App\Core\Roles;
 use App\Core\Validator;
 use App\Models\Member;
 use App\Models\MemberPortal;
+use App\Models\MemberWallet;
 use App\Models\News;
 
 /**
@@ -161,5 +162,106 @@ final class MemberPortalController extends Controller
 
         flash_set('success', 'Pesan terkirim ke admin.');
         redirect('/portal/chat');
+    }
+
+    // ================================================== SALDO ANGGOTA (WALLET)
+
+    /** Halaman wallet anggota: saldo, riwayat, PIN, dan pengajuan top up. */
+    public function wallet(): void
+    {
+        Roles::requirePermission('portal.view');
+        $user = (array) Auth::user();
+        $member = $this->myMember();
+
+        if ($member === null) {
+            flash_set('error', 'Akun Anda belum tertaut ke data anggota.');
+            redirect('/portal');
+        }
+
+        $memberId = (int) $member['id'];
+        MemberWallet::ensure($memberId); // wallet saldo 0 otomatis bila belum ada
+
+        $this->view('portal/wallet', [
+            'pageTitle'    => 'Saldo & Transaksi Saya',
+            'pageSubtitle' => $member['member_no'] . ' — ' . $member['full_name'],
+            'member'       => $member,
+            'balance'      => MemberWallet::balance($memberId),
+            'hasPin'       => MemberWallet::hasPin($memberId),
+            'ledger'       => MemberWallet::ledger($memberId, 30),
+            'requests'     => MemberWallet::topupRequests($memberId, 10),
+            'unread'       => MemberPortal::memberUnreadCount($memberId),
+            'allowedViews' => Roles::allowedViews($user['role']),
+            'activeView'   => 'portal_wallet',
+        ]);
+    }
+
+    /** Buat / ubah PIN transaksi 6 digit (verifikasi PIN lama saat mengubah). */
+    public function savePin(): void
+    {
+        Roles::requirePermission('portal.view');
+        Csrf::validate();
+        $member = $this->myMember();
+        if ($member === null) {
+            flash_set('error', 'Akun Anda belum tertaut ke data anggota.');
+            redirect('/portal');
+        }
+
+        $current = trim((string) ($_POST['current_pin'] ?? ''));
+        $new = trim((string) ($_POST['new_pin'] ?? ''));
+        $confirm = trim((string) ($_POST['confirm_pin'] ?? ''));
+        $hadPin = MemberWallet::hasPin((int) $member['id']);
+
+        try {
+            if ($new !== $confirm) {
+                throw new \RuntimeException('Konfirmasi PIN tidak sama dengan PIN baru.');
+            }
+            MemberWallet::setPin((int) $member['id'], $new, $current !== '' ? $current : null);
+        } catch (\RuntimeException $e) {
+            flash_set('error', $e->getMessage());
+            redirect('/portal/wallet');
+        }
+
+        Audit::log('UPDATE', 'PIN transaksi ' . ($hadPin ? 'diperbarui' : 'dibuat') . ' untuk ' . $member['member_no'], 'SALDO', (string) $member['member_no']);
+        flash_set('success', 'PIN transaksi berhasil disimpan.');
+        redirect('/portal/wallet');
+    }
+
+    /** Ajukan top up dari portal (TIDAK langsung menambah saldo — diproses admin). */
+    public function topupRequest(): void
+    {
+        Roles::requirePermission('portal.view');
+        Csrf::validate();
+        $user = (array) Auth::user();
+        $member = $this->myMember();
+        if ($member === null) {
+            flash_set('error', 'Akun Anda belum tertaut ke data anggota.');
+            redirect('/portal');
+        }
+
+        $amount = round((float) ($_POST['amount'] ?? 0), 2);
+        $note = mb_substr(trim((string) ($_POST['note'] ?? '')), 0, 255);
+
+        try {
+            if ($amount <= 0 || $amount > 100000000) {
+                throw new \RuntimeException('Nominal pengajuan top up tidak valid.');
+            }
+            MemberWallet::verifyPin((int) $member['id'], trim((string) ($_POST['wallet_pin'] ?? '')));
+            $id = MemberWallet::createTopupRequest((int) $member['id'], $amount, $note, (int) $user['id']);
+            $request = MemberWallet::findTopup($id);
+        } catch (\RuntimeException $e) {
+            flash_set('error', $e->getMessage());
+            redirect('/portal/wallet');
+        }
+
+        \App\Models\Notification::push(
+            'Pengajuan top up saldo baru',
+            $member['full_name'] . ' (' . $member['member_no'] . ') mengajukan top up ' . rupiah($amount) . '.',
+            'INFO',
+            '/sales/pos',
+            ['role' => Roles::ADMIN]
+        );
+        Audit::log('CREATE', 'Pengajuan top up ' . ($request['request_no'] ?? '-') . ' oleh ' . $member['member_no'] . ' sebesar ' . rupiah($amount), 'SALDO', (string) ($request['request_no'] ?? ''));
+        flash_set('success', 'Pengajuan top up terkirim (' . ($request['request_no'] ?? '-') . '). Menunggu diproses admin — saldo belum bertambah.');
+        redirect('/portal/wallet');
     }
 }

@@ -17,6 +17,15 @@ $activeView   = $activeView ?? 'dashboard';
 $flash        = $flash ?? null;
 
 // Sidebar definition: view => [icon, label, section]
+// URL khusus utk view yang path-nya tidak sama dengan '/'.{view}.
+$sidebarUrls = [
+    'portal_chat'   => '/portal/chat',
+    'portal_wallet' => '/portal/wallet',
+    'sales_pos'     => '/sales/pos',
+    'sales_orders'  => '/sales',
+    'sales_reports' => '/sales/reports',
+    'savings'       => '/tabungan',
+];
 $sidebarSections = [
     'NAVIGASI UTAMA' => [
         'dashboard' => ['fa-solid fa-chart-pie', 'Dashboard Executive'],
@@ -30,6 +39,13 @@ $sidebarSections = [
     'AKUNTANSI & SHU' => [
         'akuntansi' => ['fa-solid fa-book-journal-whills', 'Jurnal & Laporan'],
         'shu'       => ['fa-solid fa-calculator', 'Kalkulasi Bagi SHU'],
+    ],
+    'MARKETPLACE & PENJUALAN' => [
+        'products'      => ['fa-solid fa-box-open', 'Produk & Stok'],
+        'sales_pos'     => ['fa-solid fa-cash-register', 'Kasir (POS)'],
+        'sales_orders'  => ['fa-solid fa-receipt', 'Pesanan Penjualan'],
+        'sales_reports' => ['fa-solid fa-chart-line', 'Laporan Penjualan'],
+        'savings'       => ['fa-solid fa-piggy-bank', 'Tabungan Uang'],
     ],
     'PORTAL & SISTEM' => [
         'news'      => ['fa-solid fa-newspaper', 'Berita / News'],
@@ -46,16 +62,28 @@ $isAnggota = ($currentUser['role'] ?? '') === 'ANGGOTA';
 if ($isAnggota) {
     $sidebarSections = [
         'PORTAL ANGGOTA' => [
-            'portal'      => ['fa-solid fa-chart-pie', 'Saldo & SHU Saya'],
-            'portal_chat' => ['fa-solid fa-comments', 'Pesan ke Admin'],
+            'portal'       => ['fa-solid fa-chart-pie', 'Saldo & SHU Saya'],
+            'portal_wallet' => ['fa-solid fa-coins', 'Saldo & Transaksi'],
+            'portal_chat'  => ['fa-solid fa-comments', 'Pesan ke Admin'],
         ],
     ];
 }
 
 $brandName = \App\Models\Setting::get('brandName', config('app.name'));
 $logoIcon = \App\Models\Setting::get('logoIcon', config('app.logo_icon'));
+$logoImage = (string) \App\Models\Setting::get('logoImage', '');
 $colorPrimary = \App\Models\Setting::get('colorPrimary', '#0b7a3e');
 $hasFavicon = is_file(BASE_PATH . '/public/favicon.ico');
+/** Cetak tile logo: gambar upload (transparan, kontras di terang/gelap) atau ikon FontAwesome. */
+$logoTile = function (string $wrapClass, string $imgClass, string $iconClass) use ($logoImage, $logoIcon): string {
+    if ($logoImage !== '') {
+        return '<div class="' . e($wrapClass) . ' overflow-hidden">'
+            . '<img src="' . e($logoImage) . '" alt="Logo" class="' . e($imgClass) . '">'
+            . '</div>';
+    }
+
+    return '<div class="' . e($wrapClass) . '"><i class="' . e($logoIcon) . ' ' . e($iconClass) . '"></i></div>';
+};
 ?>
 <!DOCTYPE html>
 <html lang="id" class="h-full bg-slate-50 scroll-smooth">
@@ -68,6 +96,19 @@ $hasFavicon = is_file(BASE_PATH . '/public/favicon.ico');
     <link rel="icon" href="/favicon.ico" sizes="any">
   <?php else: ?>
     <link rel="icon" href="data:,">
+  <?php endif; ?>
+  <?php if (is_file(BASE_PATH . '/public/apple-touch-icon.png')): ?>
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <?php endif; ?>
+  <?php if (is_file(BASE_PATH . '/public/icon-192.png') && is_file(BASE_PATH . '/public/icon-512.png')): ?>
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
+    <link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png">
+    <link rel="manifest" href="/site.webmanifest">
+  <?php endif; ?>
+  <?php $ogAsset = (string) \App\Models\Setting::get('ogImagePath', ''); ?>
+  <?php if ($ogAsset !== ''): ?>
+    <meta property="og:image" content="<?= e(base_url('/' . $ogAsset)) ?>">
+    <meta name="twitter:image" content="<?= e(base_url('/' . $ogAsset)) ?>">
   <?php endif; ?>
 
   <script src="https://cdn.tailwindcss.com"></script>
@@ -174,14 +215,7 @@ $hasFavicon = is_file(BASE_PATH . '/public/favicon.ico');
           <i class="fa-solid fa-bars text-lg"></i>
         </button>
         <div class="flex items-center space-x-2.5 min-w-0">
-          <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-600 to-brand-500 flex items-center justify-center text-white shadow-md shadow-brand-600/20 overflow-hidden shrink-0">
-            <?php $logoImage = \App\Models\Setting::get('logoImage', ''); ?>
-            <?php if ($logoImage !== ''): ?>
-              <img src="<?= e($logoImage) ?>" alt="Logo" class="w-full h-full object-contain">
-            <?php else: ?>
-              <i class="<?= e($logoIcon) ?> text-xl"></i>
-            <?php endif; ?>
-          </div>
+          <?= $logoTile('w-10 h-10 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-white shadow-md shadow-brand-600/20 shrink-0', 'w-full h-full object-contain', 'text-xl') ?>
           <div class="min-w-0">
             <h1 class="font-display font-bold text-sm sm:text-base leading-tight text-brand-600 dark:text-brand-500 truncate"><?= e($brandName) ?></h1>
             <p class="text-[10px] tracking-wider font-semibold text-slate-500 uppercase truncate">Koperasi Digital Enterprise</p>
@@ -226,21 +260,77 @@ $hasFavicon = is_file(BASE_PATH . '/public/favicon.ico');
             </div>
           </div>
         </div>
-        <!-- Logout -->
-        <form method="post" action="/logout" class="inline" onsubmit="return confirmAction(this, 'Yakin ingin keluar?')">
+        <!-- Logout (menu profil di kanan atas sudah memuat tombol logout) -->
+        <form method="post" action="/logout" class="hidden" aria-hidden="true">
           <?= Csrf::field() ?>
-          <button type="submit" title="Logout"
-            class="p-2 rounded-lg text-slate-500 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 transition">
-            <i class="fa-solid fa-right-from-bracket text-base"></i>
-          </button>
         </form>
-        <div class="flex items-center pl-2 border-l border-slate-200 dark:border-slate-800 space-x-2 shrink-0">
-          <div class="w-8 h-8 rounded-full bg-brand-600 text-white font-bold flex items-center justify-center text-xs shadow shrink-0">
-            <span><?= e(initials((string) ($currentUser['full_name'] ?? 'U'))) ?></span>
-          </div>
-          <div class="hidden lg:block text-left">
-            <p class="text-xs font-bold text-slate-800 dark:text-slate-100 leading-tight"><?= e($currentUser['full_name'] ?? '') ?></p>
-            <p class="text-[10px] text-slate-500"><?= e(role_label((string) ($currentUser['role'] ?? ''))) ?></p>
+        <!-- Profil pengguna: klik untuk buka menu profil -->
+        <div class="relative shrink-0" id="profile-menu-wrap">
+          <button type="button" onclick="toggleProfileMenu()" title="Menu profil"
+            class="flex items-center pl-2 border-l border-slate-200 dark:border-slate-800 space-x-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition py-1.5 pr-2">
+            <?php $avatar = (string) ($currentUser['avatar_path'] ?? ''); ?>
+            <?php if ($avatar !== ''): ?>
+              <img src="<?= e($avatar) ?>" alt="Foto profil" class="w-8 h-8 rounded-full object-cover shadow shrink-0">
+            <?php else: ?>
+              <div class="w-8 h-8 rounded-full bg-brand-600 text-white font-bold flex items-center justify-center text-xs shadow shrink-0">
+                <span><?= e(initials((string) ($currentUser['full_name'] ?? 'U'))) ?></span>
+              </div>
+            <?php endif; ?>
+            <div class="hidden lg:block text-left">
+              <p class="text-xs font-bold text-slate-800 dark:text-slate-100 leading-tight"><?= e($currentUser['full_name'] ?? '') ?></p>
+              <p class="text-[10px] text-slate-500"><?= e(role_label((string) ($currentUser['role'] ?? ''))) ?></p>
+            </div>
+            <i class="fa-solid fa-chevron-down text-[10px] text-slate-400 hidden lg:block"></i>
+          </button>
+          <div id="profile-menu" class="hidden absolute right-0 mt-2 w-72 max-w-[90vw] glass-card rounded-2xl shadow-2xl z-50 overflow-hidden">
+            <div class="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center gap-3">
+              <?php if ($avatar !== ''): ?>
+                <img src="<?= e($avatar) ?>" alt="" class="w-12 h-12 rounded-full object-cover shrink-0">
+              <?php else: ?>
+                <div class="w-12 h-12 rounded-full bg-brand-600 text-white font-bold flex items-center justify-center text-sm shrink-0"><?= e(initials((string) ($currentUser['full_name'] ?? 'U'))) ?></div>
+              <?php endif; ?>
+              <div class="min-w-0">
+                <p class="text-xs font-bold text-slate-800 dark:text-slate-100 truncate"><?= e($currentUser['full_name'] ?? '') ?></p>
+                <p class="text-[10px] text-slate-500 truncate"><?= e($currentUser['email'] ?? '') ?></p>
+                <p class="text-[10px] font-bold text-brand-600 uppercase mt-0.5"><?= e(role_label((string) ($currentUser['role'] ?? ''))) ?></p>
+              </div>
+            </div>
+            <form method="post" action="/profile/update" class="p-4 space-y-2 border-b border-slate-100 dark:border-slate-800">
+              <?= Csrf::field() ?>
+              <div>
+                <label class="text-[10px] font-bold text-slate-500 uppercase">Nama Lengkap</label>
+                <input type="text" name="full_name" required maxlength="120" value="<?= e($currentUser['full_name'] ?? '') ?>"
+                  class="w-full mt-1 px-3 py-2 text-xs border rounded-xl bg-white dark:bg-slate-800">
+              </div>
+              <div>
+                <label class="text-[10px] font-bold text-slate-500 uppercase">Email</label>
+                <input type="email" name="email" required maxlength="120" value="<?= e($currentUser['email'] ?? '') ?>"
+                  class="w-full mt-1 px-3 py-2 text-xs border rounded-xl bg-white dark:bg-slate-800">
+              </div>
+              <button type="submit" class="w-full py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold shadow">
+                <i class="fa-solid fa-floppy-disk mr-1"></i>Simpan Profil
+              </button>
+            </form>
+            <form method="post" action="/profile/avatar" enctype="multipart/form-data" class="p-4 space-y-2 border-b border-slate-100 dark:border-slate-800">
+              <?= Csrf::field() ?>
+              <label class="text-[10px] font-bold text-slate-500 uppercase block">Foto Profil (JPG/PNG/WEBP, maks 3MB)</label>
+              <input type="file" name="avatar" accept="image/jpeg,image/png,image/webp" required
+                class="w-full px-2 py-1.5 text-[11px] border rounded-xl bg-white dark:bg-slate-800 file:mr-2 file:px-2 file:py-1 file:rounded-lg file:border-0 file:bg-brand-50 file:text-brand-600 file:text-[10px] file:font-bold">
+              <button type="submit" class="w-full py-2 rounded-xl bg-slate-800 dark:bg-slate-700 hover:bg-slate-900 text-white text-xs font-bold shadow">
+                <i class="fa-solid fa-camera mr-1"></i>Unggah Foto
+              </button>
+            </form>
+            <div class="p-2">
+              <a href="/password/change" class="flex items-center space-x-2 px-3 py-2 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition">
+                <i class="fa-solid fa-key text-brand-600"></i><span>Ganti Password</span>
+              </a>
+              <form method="post" action="/logout" onsubmit="return confirmAction(this, 'Yakin ingin keluar?')">
+                <?= Csrf::field() ?>
+                <button type="submit" class="w-full flex items-center space-x-2 px-3 py-2 rounded-xl text-xs font-semibold text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition">
+                  <i class="fa-solid fa-right-from-bracket"></i><span>Logout</span>
+                </button>
+              </form>
+            </div>
           </div>
         </div>
       </div>
@@ -275,7 +365,7 @@ $hasFavicon = is_file(BASE_PATH . '/public/favicon.ico');
                     : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 font-medium')
                   . ' transition';
               ?>
-              <a href="<?= $viewId === 'portal_chat' ? '/portal/chat' : '/' . e($viewId) ?>" id="nav-<?= e($viewId) ?>" class="<?= $classes ?>">
+              <a href="<?= $sidebarUrls[$viewId] ?? '/' . e($viewId) ?>" id="nav-<?= e($viewId) ?>" class="<?= $classes ?>">
                 <i class="<?= e($icon) ?> text-sm"></i><span><?= e($label) ?></span>
               </a>
             <?php endforeach; ?>
@@ -381,6 +471,23 @@ $hasFavicon = is_file(BASE_PATH . '/public/favicon.ico');
       panel.classList.toggle('hidden');
       if (!panel.classList.contains('hidden')) loadNotifications();
     }
+
+    function toggleProfileMenu() {
+      var menu = document.getElementById('profile-menu');
+      if (menu) menu.classList.toggle('hidden');
+    }
+    document.addEventListener('click', function (ev) {
+      var wrap = document.getElementById('profile-menu-wrap');
+      var menu = document.getElementById('profile-menu');
+      if (!wrap || !menu || menu.classList.contains('hidden')) return;
+      if (!wrap.contains(ev.target)) menu.classList.add('hidden');
+    });
+    document.addEventListener('keydown', function (ev) {
+      if (ev.key === 'Escape') {
+        var menu = document.getElementById('profile-menu');
+        if (menu) menu.classList.add('hidden');
+      }
+    });
 
     function toggleDarkMode() {
       var isDark = document.documentElement.classList.toggle('dark');

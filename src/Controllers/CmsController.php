@@ -136,7 +136,7 @@ final class CmsController extends Controller
             redirect('/cms');
         }
 
-        $items = array_values(array_filter($items, static fn (array $v): bool => $v['videoId'] ?? '' !== ''));
+        $items = array_values(array_filter($items, static fn (array $v): bool => ($v['videoId'] ?? '') !== ''));
         Setting::set('portal_videos', (string) json_encode(array_slice($items, 0, 24), JSON_UNESCAPED_SLASHES), $userId);
         Audit::log('UPDATE', 'Video portal diperbarui (' . count($items) . ' item)', 'CMS');
         flash_set('success', 'Data berhasil diperbarui.');

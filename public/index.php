@@ -17,10 +17,13 @@ use App\Controllers\FinController;
 use App\Controllers\LookupController;
 use App\Controllers\MemberController;
 use App\Controllers\MemberPortalController;
+use App\Controllers\MarketplaceController;
 use App\Controllers\MiscController;
 use App\Controllers\NewsController;
 use App\Controllers\PortalController;
 use App\Controllers\PublicNewsController;
+use App\Controllers\SalesController;
+use App\Controllers\SavingsController;
 use App\Controllers\UserController;
 use App\Core\Auth;
 use App\Controllers\ReportController;
@@ -56,6 +59,10 @@ $router->post('/logout', AuthController::class, 'logout');
 $router->get('/password/change', UserController::class, 'showChangePassword');
 $router->post('/password/change', UserController::class, 'changePassword');
 
+// Profil sendiri (menu profil di navbar dashboard/portal): nama, email, foto
+$router->post('/profile/update', UserController::class, 'updateProfile');
+$router->post('/profile/avatar', UserController::class, 'updateAvatar');
+
 // Dashboard
 // Dashboard exports
 $router->get('/dashboard/export/excel', DashboardController::class, 'exportExcel');
@@ -82,6 +89,10 @@ $router->get('/members/lookup', LookupController::class, 'member');
 // Kartu anggota: QR image + halaman verifikasi publik (token acak, bukan NIK).
 $router->get('/qr/{token}', CardController::class, 'qr');
 $router->get('/anggota/verify/{token}', CardController::class, 'verify');
+// Aksi finansial dari hasil scan QR — SEMUA wajib PIN 6 digit (QR hanya identifikasi)
+$router->post('/anggota/verify/{token}/saldo', CardController::class, 'verifySaldo');
+$router->post('/anggota/verify/{token}/riwayat', CardController::class, 'verifyHistory');
+$router->post('/anggota/verify/{token}/topup', CardController::class, 'verifyTopup');
 
 // Modul keuangan: simpanan, pinjaman/angsuran, kas, akuntansi, SHU
 $router->get('/simpanan', FinController::class, 'savings');
@@ -127,6 +138,14 @@ $router->post('/berita/{id}/like', PublicNewsController::class, 'like');
 $router->post('/berita/{id}/share', PublicNewsController::class, 'share');
 $router->post('/berita/{id}/comment', PublicNewsController::class, 'comment');
 
+// Marketplace publik (multi-marketplace, tanpa login)
+// Statis dulu sebelum {id} agar tidak tertelan parameter.
+$router->get('/marketplace', MarketplaceController::class, 'index');
+$router->get('/marketplace/keranjang', MarketplaceController::class, 'cart');
+$router->post('/marketplace/checkout', MarketplaceController::class, 'checkout');
+$router->get('/marketplace/sukses', MarketplaceController::class, 'success');
+$router->get('/marketplace/{id}', MarketplaceController::class, 'detail');
+
 // CMS Landing Page (portal publik)
 $router->get('/cms', CmsController::class, 'index');
 $router->post('/cms/text', CmsController::class, 'saveText');
@@ -138,6 +157,7 @@ $router->post('/cms/products', CmsController::class, 'saveProducts');
 // Pengaturan (identitas + kartu anggota)
 $router->get('/settings', SettingsController::class, 'index');
 $router->post('/settings/general', SettingsController::class, 'saveGeneral');
+$router->post('/settings/assets', SettingsController::class, 'saveAssets');
 $router->post('/settings/card-background', SettingsController::class, 'saveCardBackground');
 
 // Notifikasi & log aktivitas
@@ -151,6 +171,10 @@ $router->get('/portal', MemberPortalController::class, 'dashboard');
 $router->post('/portal/loan-request', MemberPortalController::class, 'submitLoan');
 $router->get('/portal/chat', MemberPortalController::class, 'chat');
 $router->post('/portal/chat', MemberPortalController::class, 'sendChat');
+// Saldo & transaksi anggota (portal): PIN 6 digit + riwayat + pengajuan top up
+$router->get('/portal/wallet', MemberPortalController::class, 'wallet');
+$router->post('/portal/wallet/pin', MemberPortalController::class, 'savePin');
+$router->post('/portal/wallet/topup', MemberPortalController::class, 'topupRequest');
 
 // Komunikasi anggota (sisi admin)
 $router->get('/support', SupportController::class, 'inbox');
@@ -167,6 +191,43 @@ $router->post('/users/delete/{id}', UserController::class, 'destroy');
 $router->post('/users/toggle/{id}', UserController::class, 'toggle');
 $router->post('/users/password/{id}', UserController::class, 'resetPassword');
 $router->get('/users/export/excel', UserController::class, 'exportExcel');
+
+// Produk & stok (dashboard)
+$router->get('/products', SalesController::class, 'products');
+$router->post('/products', SalesController::class, 'saveProduct');
+$router->get('/products/stock/{id}', SalesController::class, 'stockCard');
+$router->post('/products/stock/{id}', SalesController::class, 'adjustStock');
+$router->post('/products/delete/{id}', SalesController::class, 'deleteProduct');
+
+// Kasir POS multi-kasir + pesanan + laporan penjualan
+$router->get('/sales/pos', SalesController::class, 'pos');
+$router->post('/sales/pos', SalesController::class, 'storePos');
+
+// Struk thermal 80mm per transaksi (HTML auto-print / teks ESC-POS)
+$router->get('/sales/receipt/{id}', SalesController::class, 'receipt');
+$router->get('/sales/receipt/{id}/plain', SalesController::class, 'receiptPlainAction');
+
+// Scan barcode produk utk kasir (JSON lookup)
+$router->get('/sales/pos/product/{code}', SalesController::class, 'posProduct');
+// Scan QR kartu anggota (identifikasi saja — PIN diminta saat bayar saldo)
+$router->get('/sales/pos/member/{token}', SalesController::class, 'posMember');
+// Top up saldo kasir (kas masuk + jurnal) & proses pengajuan top up anggota
+$router->post('/sales/pos/topup', SalesController::class, 'topup');
+$router->post('/sales/topup-requests/{id}/process', SalesController::class, 'processTopup');
+// Hapus permanen transaksi (khusus Super Admin)
+$router->post('/sales/{id}/delete', SalesController::class, 'destroyOrder');
+$router->get('/sales', SalesController::class, 'orders');
+$router->get('/sales/reports', SalesController::class, 'reports');
+$router->get('/sales/export/orders', SalesController::class, 'exportOrders');
+$router->get('/sales/export/stock', SalesController::class, 'exportStock');
+$router->get('/sales/{id}', SalesController::class, 'orderDetail');
+$router->post('/sales/{id}/status', SalesController::class, 'updateStatus');
+
+// Tabungan Uang: pos saldo koperasi + laporan keluar-masuk
+$router->get('/tabungan', SavingsController::class, 'index');
+$router->post('/tabungan/move', SavingsController::class, 'move');
+$router->post('/tabungan/adjust', SavingsController::class, 'adjust');
+$router->get('/tabungan/export', SavingsController::class, 'export');
 
 // Catch-all: any uncaught Throwable (incl. model/DB errors) → themed 500.
 try {

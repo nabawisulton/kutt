@@ -34,8 +34,9 @@ $val = fn (string $key, string $default = ''): string => (string) ($settings[$ke
         </div>
       </div>
       <div>
-        <label class="text-[10px] font-bold text-slate-500 uppercase">Ikon Logo (class FontAwesome)</label>
+        <label class="text-[10px] font-bold text-slate-500 uppercase">Ikon Cadangan (FontAwesome)</label>
         <input type="text" name="logoIcon" value="<?= e($val('logoIcon', 'fa-solid fa-cow')) ?>" class="w-full mt-1 px-3 py-2 text-xs border rounded-xl bg-white dark:bg-slate-800 font-mono">
+        <p class="text-[9px] text-slate-400 mt-1">Hanya dipakai jika belum ada logo terunggah di kartu "Logo &amp; Aset Aplikasi".</p>
       </div>
       <div class="md:col-span-2">
         <label class="text-[10px] font-bold text-slate-500 uppercase">Alamat Footer</label>
@@ -51,6 +52,74 @@ $val = fn (string $key, string $default = ''): string => (string) ($settings[$ke
       </div>
       <div class="md:col-span-2 flex justify-end pt-2 border-t border-slate-100 dark:border-slate-800">
         <button class="px-5 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold shadow"><i class="fa-solid fa-floppy-disk mr-1"></i>Simpan Identitas</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Logo, favicon, ikon PWA, gambar share -->
+  <div class="glass-card rounded-2xl p-5 shadow-sm">
+    <h3 class="font-display text-sm font-bold text-slate-800 dark:text-slate-100 mb-4"><i class="fa-solid fa-image mr-1 text-brand-600"></i>Logo &amp; Aset Aplikasi</h3>
+    <form method="post" action="/settings/assets" enctype="multipart/form-data" class="space-y-4">
+      <?= Csrf::field() ?>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div class="space-y-2">
+          <label class="text-[10px] font-bold text-slate-500 uppercase">Logo Koperasi (PNG/JPG/WEBP, maks 3MB)</label>
+          <div class="flex items-center gap-3">
+            <?php $curLogo = (string) (\App\Models\Setting::get('logoImage', '') ?? ''); ?>
+            <?php if ($curLogo !== ''): ?>
+              <div class="w-14 h-14 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 flex items-center justify-center overflow-hidden shrink-0">
+                <img src="<?= e($curLogo) ?>" alt="Logo saat ini" class="w-full h-full object-contain">
+              </div>
+              <label class="flex items-center gap-1.5 text-[10px] text-slate-500 shrink-0"><input type="checkbox" name="remove_logo" value="1"> Hapus logo</label>
+            <?php else: ?>
+              <div class="w-14 h-14 rounded-xl border border-dashed border-slate-300 dark:border-slate-600 flex items-center justify-center text-slate-300 shrink-0"><i class="fa-solid fa-image text-xl"></i></div>
+            <?php endif; ?>
+          </div>
+          <input type="file" name="logo_image" accept="image/jpeg,image/png,image/webp" onchange="previewBrand(this,'brand-logo-preview')"
+            class="w-full px-3 py-1.5 text-xs border rounded-xl bg-white dark:bg-slate-800 file:mr-2 file:px-2 file:py-1 file:rounded-lg file:border-0 file:bg-brand-50 file:text-brand-600 file:text-[10px] file:font-bold">
+          <p class="text-[9px] text-slate-400">Disimpan sebagai PNG transparan — warna logo tetap asli dan tampil presisi di mode terang maupun gelap. Disarankan PNG dengan latar transparan.</p>
+          <div id="brand-logo-preview" class="hidden w-14 h-14 rounded-xl border border-slate-200 bg-white dark:bg-slate-900 p-1 overflow-hidden"><img class="w-full h-full object-contain" alt="Preview"></div>
+        </div>
+
+        <div class="space-y-2">
+          <label class="text-[10px] font-bold text-slate-500 uppercase">Favicon &amp; Ikon Aplikasi (disarankan gambar persegi min. 512x512)</label>
+          <input type="file" name="favicon_image" accept="image/jpeg,image/png,image/webp" onchange="previewBrand(this,'brand-favicon-preview')"
+          class="w-full px-3 py-1.5 text-xs border rounded-xl bg-white dark:bg-slate-800 file:mr-2 file:px-2 file:py-1 file:rounded-lg file:border-0 file:bg-brand-50 file:text-brand-600 file:text-[10px] file:font-bold">
+          <p class="text-[9px] text-slate-400">Satu unggahan otomatis menghasilkan: <strong>favicon.ico</strong> (tab browser), <strong>apple-touch-icon.png</strong> (180px, perangkat Apple), <strong>icon-192.png</strong> &amp; <strong>icon-512.png</strong> (PWA).</p>
+          <div class="flex items-center gap-2 pt-1">
+            <span class="text-[10px] text-slate-400">Status saat ini:</span>
+            <?php foreach (['favicon.ico', 'apple-touch-icon.png', 'icon-192.png', 'icon-512.png'] as $iF): ?>
+              <span class="px-1.5 py-0.5 rounded text-[9px] font-bold <?= is_file(BASE_PATH . '/public/' . $iF) ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-400' ?>"><?= e($iF) ?></span>
+            <?php endforeach; ?>
+          </div>
+          <div id="brand-favicon-preview" class="hidden w-10 h-10 rounded-lg border border-slate-200 bg-white dark:bg-slate-900 p-0.5 overflow-hidden"><img class="w-full h-full object-contain" alt="Preview"></div>
+        </div>
+      </div>
+
+      <div class="space-y-2 border-t border-slate-100 dark:border-slate-800 pt-3">
+        <label class="text-[10px] font-bold text-slate-500 uppercase">Gambar Share Portal (OG, idealnya 1200x630 - otomatis dikrop)</label>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div class="space-y-2">
+            <input type="file" name="og_image" accept="image/jpeg,image/png,image/webp" onchange="previewBrand(this,'brand-og-preview')"
+              class="w-full px-3 py-1.5 text-xs border rounded-xl bg-white dark:bg-slate-800 file:mr-2 file:px-2 file:py-1 file:rounded-lg file:border-0 file:bg-brand-50 file:text-brand-600 file:text-[10px] file:font-bold">
+            <?php $curOg = (string) (\App\Models\Setting::get('ogImagePath', '') ?? ''); ?>
+            <?php if ($curOg !== ''): ?>
+              <div class="flex items-center gap-2">
+                <img src="<?= e($curOg) ?>" alt="Gambar OG saat ini" class="h-12 rounded-lg object-cover">
+                <label class="flex items-center gap-1.5 text-[10px] text-slate-500"><input type="checkbox" name="remove_og" value="1"> Hapus</label>
+              </div>
+            <?php else: ?>
+              <p class="text-[9px] text-slate-400">Belum ada gambar share — tautan portal memakai thumbnail otomatis / gambar berita terbaru.</p>
+            <?php endif; ?>
+          </div>
+          <div id="brand-og-preview" class="hidden rounded-xl overflow-hidden border border-slate-200"><img class="w-full object-cover" alt="Preview"></div>
+        </div>
+        <p class="text-[9px] text-slate-400">Dipakai saat tautan portal utama dibagikan ke WhatsApp / Facebook / Twitter.</p>
+      </div>
+
+      <div class="flex justify-end pt-2 border-t border-slate-100 dark:border-slate-800">
+        <button class="px-5 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold shadow"><i class="fa-solid fa-floppy-disk mr-1"></i>Simpan Aset</button>
       </div>
     </form>
   </div>
@@ -190,6 +259,18 @@ $val = fn (string $key, string $default = ''): string => (string) ($settings[$ke
 </div>
 
 <script>
+function previewBrand(input, targetId) {
+  var box = document.getElementById(targetId);
+  if (!box) return;
+  if (input.files && input.files[0]) {
+    var img = box.querySelector('img');
+    img.src = URL.createObjectURL(input.files[0]);
+    box.classList.remove('hidden');
+  } else {
+    box.classList.add('hidden');
+  }
+}
+
 function backRowToggle() {
   var on = document.querySelector('input[name="card_back_enabled"]')?.checked;
   document.getElementById('back-bg-row').classList.toggle('hidden', !on);

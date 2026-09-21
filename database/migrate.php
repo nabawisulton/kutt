@@ -209,6 +209,9 @@ ensureColumn($pdo, 'members', 'relasi_eksternal',  "ENUM('KARYAWAN','KONSUMEN','
 ensureColumn($pdo, 'members', 'jabatan_eksternal', "VARCHAR(60) NULL AFTER `relasi_eksternal`");
 ensureColumn($pdo, 'members', 'user_id', "INT UNSIGNED NULL AFTER `created_by`");
 
+// users: foto profil (avatar) untuk menu profil di navbar dashboard.
+ensureColumn($pdo, 'users', 'avatar_path', "VARCHAR(255) NULL AFTER `full_name`");
+
 // Portal anggota: pesan dua arah anggota <-> admin.
 $pdo->exec(
     'CREATE TABLE IF NOT EXISTS support_messages (
