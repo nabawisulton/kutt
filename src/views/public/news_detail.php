@@ -11,6 +11,10 @@ $comments = $comments ?? [];
 $related = $related ?? [];
 $shareUrl = $seoUrl ?? base_url('/berita/' . ($post['slug'] ?? ''));
 $shareText = rawurlencode((string) ($post['title'] ?? ''));
+/** Poster utk <img> berita: gambar -> frame video (ffmpeg) -> null. */
+$detailPoster = !empty($post['image_path'])
+    ? news_image_src($post['image_path'])
+    : news_image_src(\App\Support\Uploader::videoPoster($post['video_url'] ?? null));
 ?>
 <!DOCTYPE html>
 <html lang="id" class="h-full scroll-smooth">
@@ -27,9 +31,12 @@ $shareText = rawurlencode((string) ($post['title'] ?? ''));
   <meta property="og:title" content="<?= e($post['title'] ?? '') ?>">
   <meta property="og:description" content="<?= e($seoDesc ?? '') ?>">
   <meta property="og:url" content="<?= e($shareUrl) ?>">
-  <meta property="og:image" content="<?= e($seoImage ?? base_url('public/img/og-default.jpg')) ?>">
-  <meta property="og:image:width" content="1200">
-  <meta property="og:image:height" content="630">
+  <?php if (!empty($seoImage)): ?>
+    <meta property="og:image" content="<?= e($seoImage) ?>">
+  <?php elseif (!empty($seoVideo)): ?>
+    <meta property="og:video" content="<?= e($seoVideo) ?>">
+    <meta property="og:video:type" content="video/mp4">
+  <?php endif; ?>
   <meta property="og:locale" content="id_ID">
   <meta property="article:published_time" content="<?= e((string) ($post['published_at'] ?? '')) ?>">
 
@@ -37,9 +44,10 @@ $shareText = rawurlencode((string) ($post['title'] ?? ''));
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="<?= e($post['title'] ?? '') ?>">
   <meta name="twitter:description" content="<?= e($seoDesc ?? '') ?>">
-  <meta name="twitter:image" content="<?= e($seoImage ?? base_url('public/img/og-default.jpg')) ?>">
+  <?php if (!empty($seoImage)): ?><meta name="twitter:image" content="<?= e($seoImage) ?>"><?php endif; ?>
 
   <?php if (is_file(BASE_PATH . '/public/favicon.ico')): ?><link rel="icon" href="/favicon.ico"><?php endif; ?>
+  <?php if (is_file(BASE_PATH . '/public/apple-touch-icon.png')): ?><link rel="apple-touch-icon" href="/apple-touch-icon.png"><?php endif; ?>
 
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -69,8 +77,8 @@ $shareText = rawurlencode((string) ($post['title'] ?? ''));
 
   <main class="max-w-4xl mx-auto px-4 sm:px-6 py-8">
     <article class="glass-card rounded-2xl shadow-sm overflow-hidden">
-      <?php if (!empty($post['image_path'])): ?>
-        <img src="<?= e(news_image_src($post['image_path'])) ?>" class="w-full h-64 sm:h-80 object-cover" alt="<?= e($post['title']) ?>">
+      <?php if ($detailPoster !== ''): ?>
+        <img src="<?= e($detailPoster) ?>" class="w-full h-64 sm:h-80 object-cover" alt="<?= e($post['title']) ?>">
       <?php endif; ?>
 
       <div class="p-6 sm:p-8">

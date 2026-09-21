@@ -30,6 +30,7 @@ $navItems = [
     '/berita'   => 'Berita',
     '#profil'   => 'Profil & Visi',
     '#layanan'  => 'Unit Usaha',
+    '/marketplace' => 'Belanja',
     '#galeri'   => 'Galeri',
     '#video'    => 'Video',
     '#produk'   => 'Katalog Produk',
@@ -46,7 +47,16 @@ $navItems = [
   <title><?= e((string) $seo['title']) ?></title>
   <meta name="description" content="<?= e((string) $seo['description']) ?>">
   <?php
-    $ogImage = $heroImages[0] ?? null;
+    // Prioritas gambar share: unggahan admin (OG 1200x630) -> hero pertama -> berita terbaru.
+    $ogAsset = (string) ($brand['ogImagePath'] ?? '');
+    $ogImage = $ogAsset !== ''
+        ? base_url('/' . $ogAsset)
+        : ($heroImages[0] ?? (function (): ?string {
+            $latest = App\Core\Database::first(
+                "SELECT image_path FROM news_posts WHERE status = 'PUBLISHED' AND image_path IS NOT NULL AND image_path != '' ORDER BY published_at DESC, id DESC LIMIT 1"
+            );
+            return $latest === null ? null : base_url(news_image_src($latest['image_path']));
+        })());
     $ogUrl = base_url('/');
   ?>
   <meta property="og:title" content="<?= e((string) $seo['title']) ?>">
@@ -63,6 +73,14 @@ $navItems = [
     <link rel="icon" href="/favicon.ico" sizes="any">
   <?php else: ?>
     <link rel="icon" href="data:,">
+  <?php endif; ?>
+  <?php if (is_file(BASE_PATH . '/public/apple-touch-icon.png')): ?>
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <?php endif; ?>
+  <?php if (is_file(BASE_PATH . '/public/icon-192.png') && is_file(BASE_PATH . '/public/icon-512.png')): ?>
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
+    <link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png">
+    <link rel="manifest" href="/site.webmanifest">
   <?php endif; ?>
 
   <script src="https://cdn.tailwindcss.com"></script>
@@ -166,7 +184,7 @@ $navItems = [
     <header class="fixed top-0 left-0 right-0 z-40 glass-nav transition-all duration-300">
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
         <a href="#beranda" class="flex items-center gap-3 group">
-          <div class="w-12 h-12 rounded-2xl bg-kutt-primary text-white flex items-center justify-center font-bold text-2xl shadow-lg shadow-emerald-900/20 group-hover:scale-105 transition overflow-hidden">
+          <div class="w-12 h-12 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200/80 flex items-center justify-center font-bold text-2xl shadow-lg shadow-emerald-900/10 group-hover:scale-105 transition overflow-hidden">
             <?php if ($logoImage !== ''): ?>
               <img src="<?= e($logoImage) ?>" alt="Logo" class="w-full h-full object-contain">
             <?php else: ?>
@@ -187,8 +205,7 @@ $navItems = [
           <a href="/login"
             class="px-5 py-2.5 bg-kutt-primary hover:opacity-90 text-white font-semibold rounded-xl text-xs sm:text-sm shadow-md transition flex items-center gap-2">
             <i class="fa-solid fa-right-to-bracket"></i>
-            <span class="hidden sm:inline">Portal Anggota &amp; Admin</span>
-            <span class="sm:hidden">Login</span>
+            <span>Login</span>
           </a>
           <button type="button" onclick="toggleMobileNav()"
             class="lg:hidden p-2.5 rounded-xl bg-slate-100 text-slate-800 text-xl hover:bg-slate-200 transition">
@@ -217,7 +234,7 @@ $navItems = [
       <div class="p-5 border-t border-slate-100">
         <a href="/login" onclick="toggleMobileNav()"
           class="w-full px-5 py-3 bg-kutt-primary hover:opacity-90 text-white font-semibold rounded-xl text-sm shadow-md transition flex items-center justify-center gap-2">
-          <i class="fa-solid fa-right-to-bracket"></i> Portal Anggota &amp; Admin
+          <i class="fa-solid fa-right-to-bracket"></i> Login
         </a>
       </div>
     </aside>
@@ -238,12 +255,8 @@ $navItems = [
           <?= e((string) ($cms['heroSubtitle'] ?? '')) ?>
         </p>
         <div class="hero-anim hero-anim-4 pt-2 flex flex-col sm:flex-row items-center gap-4 justify-center md:justify-start">
-          <a href="/login"
-            class="w-full sm:w-auto px-7 py-3.5 bg-kutt-primary hover:opacity-90 text-white font-bold rounded-2xl shadow-xl shadow-emerald-700/25 transition duration-200 flex items-center justify-center gap-2">
-            <i class="fa-solid fa-user-lock"></i><span>Masuk Portal Koperasi</span>
-          </a>
           <a href="#layanan"
-            class="w-full sm:w-auto px-7 py-3.5 bg-white border border-slate-300 text-slate-700 font-bold rounded-2xl hover:bg-slate-50 transition flex items-center justify-center gap-2">
+            class="w-full sm:w-auto px-7 py-3.5 bg-kutt-primary hover:opacity-90 text-white font-bold rounded-2xl shadow-xl shadow-emerald-700/25 transition duration-200 flex items-center justify-center gap-2">
             <span>Jelajahi Unit Usaha</span><i class="fa-solid fa-arrow-down text-xs"></i>
           </a>
         </div>
@@ -396,7 +409,12 @@ $navItems = [
             <span class="text-xs font-bold text-amber-400 uppercase tracking-widest">KATALOG UNGGULAN</span>
             <h3 class="text-2xl sm:text-3xl font-extrabold font-poppins text-white mt-1">Produk Susu &amp; Olahan KUTT Grati</h3>
           </div>
-          <p class="text-xs text-slate-400 max-w-md">Diolah dari susu segar murni pilihan peternak Grati, menjamin kualitas gizi tinggi alami tanpa bahan pengawet.</p>
+          <div class="flex items-center gap-3">
+            <p class="text-xs text-slate-400 max-w-md hidden md:block">Diolah dari susu segar murni pilihan peternak Grati, menjamin kualitas gizi tinggi alami tanpa bahan pengawet.</p>
+            <a href="/marketplace" class="shrink-0 px-5 py-3 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-900 text-xs font-bold shadow-lg transition flex items-center gap-2">
+              <i class="fa-solid fa-store"></i>Beli via Marketplace
+            </a>
+          </div>
         </div>
         <div id="productsViewport" onmouseenter="pauseProductCarousel()" onmouseleave="resumeProductCarousel()">
           <div id="landingProductsGrid">
@@ -447,7 +465,7 @@ $navItems = [
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-8">
         <div class="space-y-3">
           <div class="flex items-center gap-3">
-            <div class="w-10 h-10 rounded-xl bg-kutt-primary text-white flex items-center justify-center font-bold overflow-hidden">
+            <div class="w-10 h-10 rounded-xl bg-white border border-slate-200/80 flex items-center justify-center font-bold overflow-hidden">
               <?php if ($logoImage !== ''): ?>
                 <img src="<?= e($logoImage) ?>" alt="Logo" class="w-full h-full object-contain">
               <?php else: ?>

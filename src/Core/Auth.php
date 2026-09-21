@@ -45,6 +45,7 @@ final class Auth
             'full_name' => (string) $user['full_name'],
             'role'      => (string) $user['role'],
             'email'     => (string) $user['email'],
+            'avatar_path' => (string) ($user['avatar_path'] ?? ''),
         ];
         $_SESSION['_auth_login_at'] = time();
 

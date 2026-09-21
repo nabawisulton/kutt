@@ -3,17 +3,61 @@
 /**
  * Halaman verifikasi publik setelah scan QR kartu anggota.
  * Variables: member, finance (null saat tanpa permission), transactions,
- *            canSeeFinance, cardBg. SEO vars sudah dipakai layout publik.
+ *            canSeeFinance, cardBg, cardToken, hasPin,
+ *            showBalance/walletBalance/walletLedger, showHistory/walletLedger.
+ * QR/token HANYA identifikasi — saldo & aksi finansial wajib PIN 6 digit.
  */
+
+use App\Support\PortalLayout;
+
 $member   = $member ?? [];
 $finance  = $finance ?? null;
 $transactions = $transactions ?? [];
 $canSeeFinance = (bool) ($canSeeFinance ?? false);
+$cardToken = (string) ($cardToken ?? '');
+$hasPin   = (bool) ($hasPin ?? false);
+$showBalance = (bool) ($showBalance ?? false);
+$showHistory = (bool) ($showHistory ?? false);
+$walletBalance = (float) ($walletBalance ?? 0);
+$walletLedger = $walletLedger ?? [];
+$flash = $flash ?? null;
+$brand = $brand ?? \App\Models\Setting::all();
 
 $baseUrl = base_url();
+$verifyBase = $baseUrl . '/anggota/verify/' . rawurlencode($cardToken);
+
+$navItems = [
+    ['path' => '/', 'label' => 'Beranda'],
+    ['path' => '/berita', 'label' => 'Berita & Kegiatan'],
+    ['path' => '/marketplace', 'label' => 'Belanja'],
+    ['path' => '/login', 'label' => 'Portal Anggota'],
+];
+
+/** Badge warna untuk jenis mutasi saldo. */
+function wallet_type_badge(string $type): string
+{
+    return match ($type) {
+        'TOPUP'       => 'bg-emerald-100 text-emerald-700',
+        'PEMBAYARAN'  => 'bg-amber-100 text-amber-700',
+        'REFUND'      => 'bg-sky-100 text-sky-700',
+        'PENYESUAIAN' => 'bg-slate-200 text-slate-600',
+        default       => 'bg-slate-100 text-slate-600',
+    };
+}
+
+PortalLayout::header($brand, $navItems, '/anggota/verify');
 ?>
-<main class="min-h-screen bg-[#F7F9F8] py-10 px-4">
+<main class="pt-28 pb-16 px-4">
   <div class="max-w-3xl mx-auto space-y-5">
+
+    <?php if ($flash !== null): ?>
+      <div class="rounded-2xl p-4 text-xs font-semibold shadow-sm border <?= $flash['type'] === 'error'
+          ? 'bg-red-50 border-red-200 text-red-700'
+          : ($flash['type'] === 'info' ? 'bg-sky-50 border-sky-200 text-sky-700' : 'bg-emerald-50 border-emerald-200 text-emerald-700') ?>">
+        <i class="fa-solid <?= $flash['type'] === 'error' ? 'fa-circle-exclamation' : 'fa-circle-check' ?> mr-1"></i>
+        <?= e((string) $flash['message']) ?>
+      </div>
+    <?php endif; ?>
 
     <div class="glass-card rounded-2xl p-6 shadow-sm">
       <div class="flex items-start justify-between gap-4">
@@ -61,6 +105,134 @@ $baseUrl = base_url();
       </div>
     </div>
 
+    <!-- ================================================================
+         SALDO & TRANSAKSI ANGGOTA — terlindungi PIN 6 digit.
+         QR hanya identifikasi; saldo tidak pernah tampil hanya dengan
+         memegang URL/token.
+         ================================================================ -->
+    <div class="glass-card rounded-2xl p-6 shadow-sm">
+      <h2 class="font-display text-sm font-bold text-slate-800 mb-1"><i class="fa-solid fa-coins mr-1 text-amber-500"></i>Saldo Belanja Anggota</h2>
+      <p class="text-[10px] text-slate-400 mb-4">Cek saldo, top up, dan riwayat — semua memerlukan <b>PIN transaksi 6 digit</b>.</p>
+
+      <?php if ($showBalance): ?>
+        <div class="rounded-2xl bg-gradient-to-br from-brand-600 to-brand-700 text-white p-6 mb-4 shadow-lg">
+          <p class="text-[10px] font-bold uppercase tracking-widest opacity-80">Saldo Anda</p>
+          <p class="font-display text-3xl font-bold mt-1"><?= rupiah($walletBalance) ?></p>
+          <p class="text-[10px] opacity-75 mt-2"><i class="fa-solid fa-user-check mr-1"></i><?= e((string) $member['full_name']) ?> &middot; <?= e((string) $member['member_no']) ?></p>
+        </div>
+      <?php endif; ?>
+
+      <?php if ($showBalance || $showHistory): ?>
+        <div class="overflow-x-auto">
+          <table class="w-full text-xs text-left">
+            <thead class="bg-slate-100 text-slate-500 uppercase text-[9px]">
+              <tr>
+                <th class="p-2 rounded-l-lg">Tanggal</th>
+                <th class="p-2">No. Transaksi</th>
+                <th class="p-2">Jenis</th>
+                <th class="p-2">Keterangan</th>
+                <th class="p-2 text-right">Debit</th>
+                <th class="p-2 text-right">Kredit</th>
+                <th class="p-2 text-right rounded-r-lg">Saldo</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              <?php if ($walletLedger === []): ?>
+                <tr><td colspan="7" class="p-4 text-center text-slate-400">Belum ada mutasi saldo.</td></tr>
+              <?php endif; ?>
+              <?php foreach ($walletLedger as $w): ?>
+                <?php $amt = (float) $w['amount']; ?>
+                <tr>
+                  <td class="p-2 text-slate-500 whitespace-nowrap"><?= e(tanggal((string) $w['created_at'])) ?></td>
+                  <td class="p-2 font-mono text-[10px] text-slate-500"><?= e((string) $w['transaction_no']) ?></td>
+                  <td class="p-2"><span class="px-1.5 py-0.5 rounded text-[9px] font-bold <?= wallet_type_badge((string) $w['type']) ?>"><?= e((string) $w['type']) ?></span></td>
+                  <td class="p-2 text-slate-600"><?= e((string) ($w['description'] ?? '')) ?></td>
+                  <td class="p-2 text-right font-semibold text-red-600"><?= $amt < 0 ? rupiah(-$amt) : '-' ?></td>
+                  <td class="p-2 text-right font-semibold text-emerald-600"><?= $amt > 0 ? rupiah($amt) : '-' ?></td>
+                  <td class="p-2 text-right font-bold text-slate-700"><?= rupiah((float) $w['balance_after']) ?></td>
+                </tr>
+              <?php endforeach; ?>
+            </tbody>
+          </table>
+        </div>
+        <form method="post" action="<?= e($verifyBase) ?>" class="mt-3">
+          <?= \App\Core\Csrf::field() ?>
+          <button type="submit" class="text-[10px] text-brand-600 hover:underline"><i class="fa-solid fa-lock mr-0.5"></i>Tutup (kembali ke menu PIN)</button>
+        </form>
+      <?php endif; ?>
+
+      <?php if (!$showBalance && !$showHistory): ?>
+        <?php if ($hasPin): ?>
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <button type="button" onclick="document.getElementById('pinBox').dataset.action='saldo';togglePinBox()"
+              class="px-3 py-3 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold shadow transition"><i class="fa-solid fa-wallet mr-1"></i>CEK SALDO</button>
+            <button type="button" onclick="document.getElementById('pinBox').dataset.action='topup';togglePinBox()"
+              class="px-3 py-3 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold shadow transition"><i class="fa-solid fa-plus mr-1"></i>TOP UP</button>
+            <a href="<?= e($baseUrl) ?>/marketplace"
+              class="px-3 py-3 rounded-xl bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold shadow transition text-center"><i class="fa-solid fa-cart-shopping mr-1"></i>TRANSAKSI</a>
+            <button type="button" onclick="document.getElementById('pinBox').dataset.action='riwayat';togglePinBox()"
+              class="px-3 py-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold shadow transition"><i class="fa-solid fa-clock-rotate-left mr-1"></i>RIWAYAT</button>
+          </div>
+
+          <div id="pinBox" data-action="saldo" class="hidden mt-4 rounded-2xl border border-brand-200 bg-brand-50/60 p-5">
+            <p class="text-xs font-bold text-slate-700 mb-1"><i class="fa-solid fa-keyboard mr-1 text-brand-600"></i>Masukkan PIN Transaksi (6 digit)</p>
+            <p class="text-[10px] text-slate-500 mb-3" id="pinHint">Untuk menampilkan saldo Anda.</p>
+            <form method="post" action="<?= e($verifyBase) ?>/saldo" class="flex flex-col sm:flex-row gap-2 sm:items-center">
+              <?= \App\Core\Csrf::field() ?>
+              <input type="password" name="wallet_pin" required maxlength="6" minlength="6" inputmode="numeric" pattern="\d{6}"
+                autocomplete="off" placeholder="&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;"
+                class="w-full sm:w-40 px-4 py-2.5 text-center text-lg tracking-[0.5em] font-bold rounded-xl border border-slate-300 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none">
+              <button type="submit" class="px-5 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold shadow transition whitespace-nowrap">
+                <i class="fa-solid fa-arrow-right-to-bracket mr-1"></i>Verifikasi
+              </button>
+            </form>
+            <p class="text-[9px] text-slate-400 mt-2"><i class="fa-solid fa-shield-halved mr-0.5"></i>Percobaan PIN salah dibatasi 5 kali, lalu PIN terkunci sementara.</p>
+          </div>
+
+          <div id="topupBox" class="hidden mt-4 rounded-2xl border border-amber-200 bg-amber-50/60 p-5">
+            <p class="text-xs font-bold text-slate-700 mb-1"><i class="fa-solid fa-circle-plus mr-1 text-amber-500"></i>Ajukan Top Up Saldo</p>
+            <p class="text-[10px] text-slate-500 mb-3">Saldo bertambah setelah admin/kasir memproses pengajuan ini (uang diterima kas).</p>
+            <form method="post" action="<?= e($verifyBase) ?>/topup" class="grid grid-cols-1 sm:grid-cols-[1fr_1fr_auto_auto] gap-2 items-center">
+              <?= \App\Core\Csrf::field() ?>
+              <input type="number" name="amount" required min="1000" max="100000000" step="1000" placeholder="Nominal (min 1.000)"
+                class="px-4 py-2.5 text-sm rounded-xl border border-slate-300 focus:ring-2 focus:ring-amber-500 outline-none">
+              <input type="text" name="note" maxlength="255" placeholder="Keterangan (opsional)"
+                class="px-4 py-2.5 text-sm rounded-xl border border-slate-300 focus:ring-2 focus:ring-amber-500 outline-none">
+              <input type="password" name="wallet_pin" required maxlength="6" minlength="6" inputmode="numeric" pattern="\d{6}"
+                autocomplete="off" placeholder="PIN 6 digit"
+                class="px-4 py-2.5 text-sm tracking-[0.4em] text-center font-bold rounded-xl border border-slate-300 focus:ring-2 focus:ring-amber-500 outline-none">
+              <button type="submit" class="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold shadow transition whitespace-nowrap">
+                <i class="fa-solid fa-paper-plane mr-1"></i>Ajukan
+              </button>
+            </form>
+          </div>
+
+          <script>
+            function togglePinBox() {
+              var box = document.getElementById('pinBox');
+              var tBox = document.getElementById('topupBox');
+              var hint = document.getElementById('pinHint');
+              var action = box.dataset.action;
+              tBox.classList.add('hidden');
+              if (action === 'topup') { tBox.classList.remove('hidden'); box.classList.add('hidden'); return; }
+              hint.textContent = action === 'riwayat'
+                ? 'Untuk menampilkan riwayat mutasi saldo Anda.'
+                : 'Untuk menampilkan saldo Anda.';
+              box.querySelector('form').setAttribute('action', '<?= e($verifyBase) ?>/' + (action === 'riwayat' ? 'riwayat' : 'saldo'));
+              box.classList.toggle('hidden');
+            }
+          </script>
+        <?php else: ?>
+          <div class="rounded-2xl bg-slate-100 p-5 text-center">
+            <i class="fa-solid fa-key text-slate-300 text-2xl"></i>
+            <p class="text-xs text-slate-600 font-semibold mt-2">PIN belum dibuat. Silakan buat PIN transaksi terlebih dahulu.</p>
+            <p class="text-[10px] text-slate-400 mt-1">Buat PIN melalui <b>Portal Anggota</b> setelah login, lalu kembali ke halaman ini.</p>
+            <a href="<?= e($baseUrl) ?>/portal" class="inline-block mt-3 px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold shadow">Buka Portal Anggota</a>
+          </div>
+        <?php endif; ?>
+      <?php endif; ?>
+    </div>
+
     <?php if ($canSeeFinance && $finance !== null): ?>
       <div class="glass-card rounded-2xl p-6 shadow-sm">
         <h2 class="font-display text-sm font-bold text-slate-800 mb-4"><i class="fa-solid fa-wallet mr-1 text-brand-600"></i>Keuangan Anggota <span class="text-[10px] font-normal text-slate-400">(akses penuh)</span></h2>
@@ -105,7 +277,7 @@ $baseUrl = base_url();
       <div class="glass-card rounded-2xl p-5 shadow-sm text-center">
         <i class="fa-solid fa-lock text-slate-300 text-2xl"></i>
         <p class="text-xs text-slate-500 mt-2">Data keuangan bersifat rahasia dan hanya tampil kepada anggota bersangkutan<br>atau pengurus dengan izin khusus setelah login.</p>
-        <a href="/login" class="inline-block mt-3 px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold shadow">Login Pengurus</a>
+        <a href="<?= e($baseUrl) ?>/login" class="inline-block mt-3 px-4 py-2 rounded-xl bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold shadow">Login Pengurus</a>
       </div>
     <?php endif; ?>
 
@@ -115,3 +287,4 @@ $baseUrl = base_url();
     </p>
   </div>
 </main>
+<?php PortalLayout::footer($brand); ?>

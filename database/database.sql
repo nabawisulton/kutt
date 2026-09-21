@@ -59,6 +59,47 @@ CREATE TABLE `audit_logs_ht` (
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
+DROP TABLE IF EXISTS `cash_savings_accounts`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `cash_savings_accounts` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `account_no` varchar(40) NOT NULL,
+  `name` varchar(120) NOT NULL,
+  `balance` decimal(14,2) NOT NULL DEFAULT 0.00,
+  `note` varchar(255) DEFAULT NULL,
+  `is_active` tinyint(1) NOT NULL DEFAULT 1,
+  `created_by` int(10) unsigned DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_cs_accounts_no` (`account_no`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+DROP TABLE IF EXISTS `cash_savings_transactions`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `cash_savings_transactions` (
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `account_id` int(10) unsigned NOT NULL,
+  `transaction_no` varchar(50) NOT NULL,
+  `type` enum('SETOR','TARIK','PEMBAYARAN','REFUND','PENYESUAIAN') NOT NULL,
+  `amount` decimal(14,2) NOT NULL,
+  `balance_before` decimal(14,2) NOT NULL,
+  `balance_after` decimal(14,2) NOT NULL,
+  `method` enum('KAS','TRANSFER','LAINNYA') NOT NULL DEFAULT 'KAS',
+  `description` varchar(255) DEFAULT NULL,
+  `reference_type` varchar(40) DEFAULT NULL,
+  `reference_id` int(10) unsigned DEFAULT NULL,
+  `created_by` int(10) unsigned DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_cs_tx_no` (`transaction_no`),
+  KEY `idx_cs_tx_account_date` (`account_id`,`created_at`),
+  KEY `idx_cs_tx_type` (`type`),
+  CONSTRAINT `fk_cs_tx_account` FOREIGN KEY (`account_id`) REFERENCES `cash_savings_accounts` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `cash_transactions`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8mb4 */;
@@ -316,6 +357,22 @@ CREATE TABLE `member_cards_ht` (
   `issued_at` datetime DEFAULT NULL,
   `is_active` tinyint(1) DEFAULT NULL,
   PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+DROP TABLE IF EXISTS `member_wallets`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `member_wallets` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `member_id` int(10) unsigned NOT NULL,
+  `balance` decimal(18,2) NOT NULL DEFAULT 0.00,
+  `pin_hash` varchar(255) DEFAULT NULL COMMENT 'bcrypt dari PIN 6 digit',
+  `pin_attempts` int(11) NOT NULL DEFAULT 0,
+  `pin_locked_until` datetime DEFAULT NULL,
+  `updated_at` datetime DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_wallet_member` (`member_id`),
+  CONSTRAINT `fk_wallet_member` FOREIGN KEY (`member_id`) REFERENCES `members` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `members`;
@@ -588,6 +645,79 @@ CREATE TABLE `password_reset_tokens` (
   CONSTRAINT `fk_prt_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
+DROP TABLE IF EXISTS `products`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `products` (
+  `id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `sku` varchar(40) NOT NULL COMMENT 'Kode produk unik',
+  `barcode` varchar(40) DEFAULT NULL,
+  `name` varchar(160) NOT NULL,
+  `category` varchar(60) DEFAULT NULL,
+  `description` text DEFAULT NULL,
+  `price` decimal(18,2) NOT NULL DEFAULT 0.00 COMMENT 'Harga jual (Rp)',
+  `cost_price` decimal(18,2) DEFAULT NULL COMMENT 'Harga pokok (opsional, utk margin)',
+  `stock` int(11) NOT NULL DEFAULT 0 COMMENT 'Stok fisik saat ini',
+  `min_stock` int(11) NOT NULL DEFAULT 5 COMMENT 'Batas stok minimum (alert)',
+  `unit` varchar(20) NOT NULL DEFAULT 'pcs',
+  `image_path` varchar(255) DEFAULT NULL,
+  `is_active` tinyint(1) NOT NULL DEFAULT 1 COMMENT 'Tampil di marketplace publik',
+  `created_by` int(10) unsigned DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_products_sku` (`sku`),
+  KEY `idx_products_category` (`category`),
+  KEY `idx_products_active` (`is_active`),
+  KEY `idx_products_barcode` (`barcode`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+DROP TABLE IF EXISTS `sales_order_items`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `sales_order_items` (
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `order_id` bigint(20) unsigned NOT NULL,
+  `product_id` int(10) unsigned DEFAULT NULL COMMENT 'NULL bila produk dihapus',
+  `product_name` varchar(160) NOT NULL COMMENT 'Snapshot nama',
+  `unit_price` decimal(18,2) NOT NULL COMMENT 'Snapshot harga saat jual',
+  `quantity` int(11) NOT NULL DEFAULT 1,
+  `total_price` decimal(18,2) NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_soi_order` (`order_id`),
+  KEY `idx_soi_product` (`product_id`),
+  CONSTRAINT `fk_soi_order` FOREIGN KEY (`order_id`) REFERENCES `sales_orders` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_soi_product` FOREIGN KEY (`product_id`) REFERENCES `products` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+DROP TABLE IF EXISTS `sales_orders`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `sales_orders` (
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `order_no` varchar(30) NOT NULL COMMENT 'JUAL-YYYYMMDD-####',
+  `channel` enum('MARKETPLACE','POS') NOT NULL DEFAULT 'POS',
+  `buyer_name` varchar(120) NOT NULL,
+  `buyer_phone` varchar(30) DEFAULT NULL,
+  `buyer_note` varchar(255) DEFAULT NULL,
+  `cashier_user_id` int(10) unsigned DEFAULT NULL COMMENT 'Kasir yang melayani (POS)',
+  `member_id` int(10) unsigned DEFAULT NULL,
+  `savings_account_id` int(10) unsigned DEFAULT NULL,
+  `payment_method` enum('CASH','TRANSFER','QRIS','COD','SALDO','TABUNGAN') NOT NULL DEFAULT 'CASH',
+  `status` enum('NEW','PAID','PROCESSING','COMPLETED','CANCELLED') NOT NULL DEFAULT 'NEW',
+  `stock_applied` tinyint(1) NOT NULL DEFAULT 0 COMMENT 'Stok sudah dipotong?',
+  `paid_at` datetime DEFAULT NULL,
+  `completed_at` datetime DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_so_order_no` (`order_no`),
+  KEY `idx_so_status` (`status`),
+  KEY `idx_so_channel` (`channel`),
+  KEY `idx_so_created` (`created_at`),
+  KEY `idx_so_cashier` (`cashier_user_id`),
+  CONSTRAINT `fk_so_cashier` FOREIGN KEY (`cashier_user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `savings_transactions`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8mb4 */;
@@ -695,6 +825,27 @@ CREATE TABLE `shu_distributions_ht` (
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
+DROP TABLE IF EXISTS `stock_movements`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `stock_movements` (
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `product_id` int(10) unsigned NOT NULL,
+  `user_id` int(10) unsigned DEFAULT NULL,
+  `change_qty` int(11) NOT NULL COMMENT '+ masuk, - keluar (penjualan/koreksi)',
+  `stock_after` int(11) NOT NULL,
+  `reason` enum('PURCHASE','SALE','ADJUSTMENT','CANCEL') NOT NULL DEFAULT 'ADJUSTMENT',
+  `reference` varchar(40) DEFAULT NULL COMMENT 'No order/adj terkait',
+  `note` varchar(255) DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `idx_sm_product` (`product_id`),
+  KEY `idx_sm_created` (`created_at`),
+  KEY `fk_stkmv_user` (`user_id`),
+  CONSTRAINT `fk_stkmv_product` FOREIGN KEY (`product_id`) REFERENCES `products` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_stkmv_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `support_messages`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8mb4 */;
@@ -716,6 +867,28 @@ CREATE TABLE `support_messages` (
   CONSTRAINT `fk_sm_user` FOREIGN KEY (`sender_user`) REFERENCES `users` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
+DROP TABLE IF EXISTS `topup_requests`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `topup_requests` (
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `member_id` int(10) unsigned NOT NULL,
+  `request_no` varchar(30) NOT NULL COMMENT 'TOP-YYYYMMDD-####',
+  `amount` decimal(18,2) NOT NULL,
+  `note` varchar(255) DEFAULT NULL,
+  `status` enum('PENDING','APPROVED','REJECTED') NOT NULL DEFAULT 'PENDING',
+  `processed_by` int(10) unsigned DEFAULT NULL,
+  `processed_at` datetime DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_tr_no` (`request_no`),
+  KEY `idx_tr_status` (`status`),
+  KEY `fk_tr_member` (`member_id`),
+  KEY `fk_tr_processor` (`processed_by`),
+  CONSTRAINT `fk_tr_member` FOREIGN KEY (`member_id`) REFERENCES `members` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_tr_processor` FOREIGN KEY (`processed_by`) REFERENCES `users` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `users`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8mb4 */;
@@ -727,6 +900,7 @@ CREATE TABLE `users` (
   `password_hash` varchar(255) NOT NULL,
   `role` enum('SUPER_ADMIN','ADMIN','BENDAHARA','KETUA','STAFF','ANGGOTA') NOT NULL DEFAULT 'STAFF',
   `full_name` varchar(120) NOT NULL,
+  `avatar_path` varchar(255) DEFAULT NULL,
   `is_active` tinyint(1) NOT NULL DEFAULT 1,
   `last_login_at` datetime DEFAULT NULL,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
@@ -756,6 +930,33 @@ CREATE TABLE `users_ht` (
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
+DROP TABLE IF EXISTS `wallet_transactions`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `wallet_transactions` (
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `member_id` int(10) unsigned NOT NULL,
+  `transaction_no` varchar(30) NOT NULL COMMENT 'SAL-YYYYMMDD-####',
+  `type` enum('TOPUP','PEMBAYARAN','REFUND','PENYESUAIAN') NOT NULL,
+  `amount` decimal(18,2) NOT NULL COMMENT '+ kredit, - debit',
+  `balance_before` decimal(18,2) NOT NULL,
+  `balance_after` decimal(18,2) NOT NULL,
+  `description` varchar(255) DEFAULT NULL,
+  `reference` varchar(40) DEFAULT NULL COMMENT 'No order / voucher terkait',
+  `order_id` bigint(20) unsigned DEFAULT NULL,
+  `user_id` int(10) unsigned DEFAULT NULL COMMENT 'Kasir/admin; NULL bila oleh anggota sendiri',
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_wt_no` (`transaction_no`),
+  KEY `idx_wt_member` (`member_id`),
+  KEY `idx_wt_created` (`created_at`),
+  KEY `fk_wt_order` (`order_id`),
+  KEY `fk_wt_user` (`user_id`),
+  CONSTRAINT `fk_wt_member` FOREIGN KEY (`member_id`) REFERENCES `members` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_wt_order` FOREIGN KEY (`order_id`) REFERENCES `sales_orders` (`id`) ON DELETE SET NULL,
+  CONSTRAINT `fk_wt_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
 /*!40101 SET SQL_MODE=@OLD_SQL_MODE */;
@@ -776,6 +977,10 @@ CREATE TABLE `users_ht` (
 -- Idempotent: hanya mengisi data dasar jika belum ada.
 -- Akun seed: admin / bendahara / ketua / staff - password: admin123
 -- (GANTI password default setelah login pertama!)
+-- =====================================================================
+-- PENTING: seed yang SUDAH tercatat di tabel `migrations` tidak dijalankan
+-- ulang pada instalasi lama. Untuk menambah data seed baru, buat FILE SEED
+-- BARU (jangan sunting file lama), lalu `php database/migrate.php`.
 -- =====================================================================
 
 -- A. USERS ------------------------------------------------------------

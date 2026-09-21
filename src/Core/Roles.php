@@ -45,8 +45,18 @@ final class Roles
         'news'      => [self::SUPER_ADMIN, self::ADMIN, self::BENDAHARA, self::KETUA, self::STAFF],
         'activity'  => [self::SUPER_ADMIN, self::ADMIN],
         'portal'        => [self::ANGGOTA],
+        'portal_wallet' => [self::ANGGOTA],
         'portal_chat'   => [self::ANGGOTA],
         'support'       => [self::SUPER_ADMIN, self::ADMIN],
+
+        // Marketplace & penjualan (multi-marketplace + multi kasir).
+        'products'      => [self::SUPER_ADMIN, self::ADMIN, self::BENDAHARA, self::STAFF],
+        'sales_pos'     => [self::SUPER_ADMIN, self::ADMIN, self::BENDAHARA, self::STAFF],
+        'sales_orders'  => [self::SUPER_ADMIN, self::ADMIN, self::BENDAHARA, self::STAFF],
+        'sales_reports' => [self::SUPER_ADMIN, self::ADMIN, self::BENDAHARA, self::KETUA],
+
+        // Tabungan uang (pos saldo koperasi).
+        'savings'       => [self::SUPER_ADMIN, self::ADMIN, self::BENDAHARA, self::KETUA],
     ];
 
     /** Granular permissions per role. */
@@ -82,6 +92,17 @@ final class Roles
         // Sisi admin: memantau & membalas pesan anggota.
         'support.view'       => [self::SUPER_ADMIN, self::ADMIN],
         'support.reply'      => [self::SUPER_ADMIN, self::ADMIN, self::STAFF],
+
+        // Produk & penjualan.
+        'product.view'    => [self::SUPER_ADMIN, self::ADMIN, self::BENDAHARA, self::KETUA, self::STAFF],
+        'product.manage'  => [self::SUPER_ADMIN, self::ADMIN, self::STAFF],
+        'sales.view'      => [self::SUPER_ADMIN, self::ADMIN, self::BENDAHARA, self::STAFF, self::KETUA],
+        'sales.pos'       => [self::SUPER_ADMIN, self::ADMIN, self::BENDAHARA, self::STAFF],
+        'sales.manage'    => [self::SUPER_ADMIN, self::ADMIN],
+
+        // Tabungan uang (pos saldo koperasi).
+        'savings.view'    => [self::SUPER_ADMIN, self::ADMIN, self::BENDAHARA, self::KETUA],
+        'savings.manage'  => [self::SUPER_ADMIN, self::ADMIN, self::BENDAHARA],
     ];
 
     public static function can(string $role, string $permission): bool

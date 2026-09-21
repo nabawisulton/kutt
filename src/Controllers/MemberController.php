@@ -394,20 +394,6 @@ final class MemberController extends Controller
             $out);
     }
 
-    public function printView(): void
-    {
-        Roles::requirePermission('report.print');
-
-        $user = (array) Auth::user();
-        $rows = Member::paginate($_GET, 1, 5000)['rows'];
-
-        $this->viewPlain('reports/members_print', [
-            'title'  => 'Laporan Data Anggota',
-            'rows'   => $rows,
-            'filters' => $_GET,
-            'userName' => $user['full_name'] ?? 'Sistem',
-        ]);
-    }
 }
 
 /**

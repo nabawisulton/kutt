@@ -23,14 +23,35 @@ final class PortalLayout
         $colorPrimary = (string) ($brand['colorPrimary'] ?? '#0b7a3e');
         $isLoggedIn   = \App\Core\Auth::check();
 
+        $iconTags = is_file(BASE_PATH . '/public/favicon.ico')
+            ? '<link rel="icon" href="/favicon.ico" sizes="any">'
+            : '<link rel="icon" href="data:,">';
+        if (is_file(BASE_PATH . '/public/apple-touch-icon.png')) {
+            $iconTags .= '<link rel="apple-touch-icon" href="/apple-touch-icon.png">';
+        }
+        if (is_file(BASE_PATH . '/public/icon-192.png') && is_file(BASE_PATH . '/public/icon-512.png')) {
+            $iconTags .= '<link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">'
+                . '<link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png">'
+                . '<link rel="manifest" href="/site.webmanifest">';
+        }
+        $ogAsset = (string) ($brand['ogImagePath'] ?? '');
+        $ogTags = '';
+        if ($ogAsset !== '') {
+            $ogUrl = base_url('/' . $ogAsset);
+            $ogTags = '<meta property="og:title" content="' . e($brandName) . '">'
+                . '<meta property="og:image" content="' . e($ogUrl) . '">'
+                . '<meta name="twitter:card" content="summary_large_image">'
+                . '<meta name="twitter:image" content="' . e($ogUrl) . '">';
+        }
+
         echo '<!DOCTYPE html>
 <html lang="id" class="h-full bg-slate-50 scroll-smooth">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>' . e($brandName) . '</title>
-  ' . (is_file(BASE_PATH . '/public/favicon.ico') ? '<link rel="icon" href="/favicon.ico" sizes="any">' : '<link rel="icon" href="data:,">') . '
   <script src="https://cdn.tailwindcss.com"></script>
+  ' . $iconTags . $ogTags . '
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Poppins:wght@500;600;700&display=swap" rel="stylesheet">
@@ -58,7 +79,7 @@ final class PortalLayout
 <header class="fixed top-0 left-0 right-0 z-40 glass-nav transition-all duration-300">
   <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
     <a href="/" class="flex items-center gap-3 group">
-      <div class="w-12 h-12 rounded-2xl bg-kutt-primary text-white flex items-center justify-center font-bold text-2xl shadow-lg shadow-emerald-900/20 group-hover:scale-105 transition overflow-hidden">'
+      <div class="w-12 h-12 rounded-2xl bg-white border border-slate-200/80 flex items-center justify-center font-bold text-2xl shadow-lg shadow-emerald-900/10 group-hover:scale-105 transition overflow-hidden">'
             . ($logoImage !== ''
                 ? '<img src="' . e($logoImage) . '" alt="Logo" class="w-full h-full object-contain">'
                 : '<i class="' . e($logoIcon) . '"></i>') . '
@@ -77,7 +98,7 @@ final class PortalLayout
     <div class="flex items-center gap-3">
       ' . ($isLoggedIn
             ? '<a href="/dashboard" class="px-5 py-2.5 bg-kutt-primary hover:opacity-90 text-white font-semibold rounded-xl text-xs sm:text-sm shadow-md transition flex items-center gap-2"><i class="fa-solid fa-gauge-high"></i><span class="hidden sm:inline">Dashboard</span></a>'
-            : '<a href="/login" class="px-5 py-2.5 bg-kutt-primary hover:opacity-90 text-white font-semibold rounded-xl text-xs sm:text-sm shadow-md transition flex items-center gap-2"><i class="fa-solid fa-right-to-bracket"></i><span class="hidden sm:inline">Portal Anggota &amp; Admin</span><span class="sm:hidden">Login</span></a>') . '
+            : '<a href="/login" class="px-5 py-2.5 bg-kutt-primary hover:opacity-90 text-white font-semibold rounded-xl text-xs sm:text-sm shadow-md transition flex items-center gap-2"><i class="fa-solid fa-right-to-bracket"></i><span>Login</span></a>') . '
       <button type="button" onclick="toggleMobileNav()" class="md:hidden p-2.5 rounded-xl bg-slate-100 text-slate-800 text-xl hover:bg-slate-200 transition"><i id="mobileMenuIcon" class="fa-solid fa-bars"></i></button>
     </div>
   </div>
@@ -96,7 +117,7 @@ final class PortalLayout
         echo '</nav>
   <div class="p-5 border-t border-slate-100">
     <a href="' . ($isLoggedIn ? '/dashboard' : '/login') . '" onclick="toggleMobileNav()" class="w-full px-5 py-3 bg-kutt-primary hover:opacity-90 text-white font-semibold rounded-xl text-sm shadow-md transition flex items-center justify-center gap-2">
-      <i class="fa-solid fa-right-to-bracket"></i> ' . ($isLoggedIn ? 'Buka Dashboard' : 'Portal Anggota &amp; Admin') . '
+      <i class="fa-solid fa-right-to-bracket"></i> ' . ($isLoggedIn ? 'Buka Dashboard' : 'Login') . '
     </a>
   </div>
 </aside>

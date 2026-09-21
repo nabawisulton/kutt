@@ -27,6 +27,10 @@ final class DashboardController extends Controller
             redirect('/portal');
         }
 
+        // Pembersihan lazy: order marketplace NEW menggantung > 24 jam dibatalkan
+        // otomatis (stok dikembalikan) agar tidak menahan stok tanpa batas.
+        \App\Models\Sale::expireStaleNewOrders();
+
         $userId = (int) $user['id'];
 
         $this->view('dashboard/index', [
@@ -58,19 +62,5 @@ final class DashboardController extends Controller
         Audit::log('EXPORT', 'Export Excel ringkasan dashboard', 'DASHBOARD');
         ExcelExport::download('ringkasan-dashboard-kutt', 'Ringkasan Dashboard',
             ['Indikator', 'Nilai'], $rows);
-    }
-
-    public function printView(): void
-    {
-        Auth::requireLogin();
-        Roles::requirePermission('report.print');
-
-        $user = (array) Auth::user();
-        $this->viewPlain('reports/dashboard_print', [
-            'title'    => 'Ringkasan Dashboard',
-            'metrics'  => Dashboard::metrics(),
-            'recent'   => Dashboard::recentTransactions(15),
-            'userName' => $user['full_name'] ?? 'Sistem',
-        ]);
     }
 }

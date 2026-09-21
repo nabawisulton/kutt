@@ -12,6 +12,7 @@ use App\Core\Roles;
 use App\Models\Notification;
 use App\Models\User;
 use App\Support\ExcelExport;
+use App\Support\Uploader;
 use RuntimeException;
 
 /**
@@ -302,6 +303,78 @@ final class UserController extends Controller
         ]);
     }
 
+    /**
+     * Perbarui nama & email milik sendiri dari menu profil (navbar).
+     * Nama di session ikut diperbarui agar navbar langsung tampil baru.
+     */
+    public function updateProfile(): void
+    {
+        Auth::requireLogin();
+        Csrf::validate();
+        $me = (array) Auth::user();
+
+        [$ok, $data, $errors] = Validator::check($_POST, [
+            'full_name' => 'required|max:120',
+            'email'     => 'required|email|max:120',
+        ]);
+        if (!$ok) {
+            flash_set('error', reset($errors) ?: 'Nama dan email wajib diisi dengan benar.');
+            redirect((string) $me['role'] === 'ANGGOTA' ? '/portal' : '/dashboard');
+        }
+
+        $email = (string) $data['email'];
+        $dup = (int) Database::scalar(
+            'SELECT COUNT(*) FROM users WHERE email = ? AND id != ?',
+            [$email, (int) $me['id']]
+        );
+        if ($dup > 0) {
+            flash_set('error', 'Email sudah digunakan akun lain.');
+            redirect((string) $me['role'] === 'ANGGOTA' ? '/portal' : '/dashboard');
+        }
+
+        User::updateProfile((int) $me['id'], (string) $data['full_name'], $email);
+
+        // Sinkronkan session agar navbar menampilkan identitas terbaru.
+        $_SESSION['_auth_user']['full_name'] = (string) $data['full_name'];
+        $_SESSION['_auth_user']['email'] = $email;
+
+        Audit::log('UPDATE', 'Profil sendiri diperbarui: ' . $data['full_name'], 'USERS', (string) $me['id']);
+        flash_set('success', 'Profil berhasil diperbarui.');
+        redirect((string) $me['role'] === 'ANGGOTA' ? '/portal' : '/dashboard');
+    }
+
+    /** Upload foto profil sendiri (dipakai menu profil di navbar). */
+    public function updateAvatar(): void
+    {
+        Auth::requireLogin();
+        Csrf::validate();
+        $me = (array) Auth::user();
+
+        try {
+            $path = Uploader::image($_FILES['avatar'] ?? null, 'avatars');
+        } catch (RuntimeException $e) {
+            flash_set('error', $e->getMessage());
+            redirect((string) $me['role'] === 'ANGGOTA' ? '/portal' : '/dashboard');
+        }
+
+        if ($path === null) {
+            flash_set('error', 'Pilih file foto terlebih dahulu.');
+            redirect((string) $me['role'] === 'ANGGOTA' ? '/portal' : '/dashboard');
+        }
+
+        $old = User::find((int) $me['id'])['avatar_path'] ?? null;
+        if ($old !== null && (string) $old !== '') {
+            Uploader::delete((string) $old);
+        }
+
+        User::updateAvatar((int) $me['id'], $path);
+        $_SESSION['_auth_user']['avatar_path'] = $path;
+
+        Audit::log('UPDATE', 'Foto profil diperbarui: ' . $me['username'], 'USERS', (string) $me['id']);
+        flash_set('success', 'Foto profil berhasil diperbarui.');
+        redirect((string) $me['role'] === 'ANGGOTA' ? '/portal' : '/dashboard');
+    }
+
     public function changePassword(): void
     {
         Auth::requireLogin();
@@ -335,7 +408,6 @@ final class UserController extends Controller
         Auth::setMustChangePassword(false);
         Audit::log('UPDATE', 'User mengganti password miliknya sendiri: ' . $me['username'], 'USERS', (string) $me['id']);
         flash_set('success', 'Password berhasil diperbarui. Terima kasih!');
-
         redirect((string) $me['role'] === 'ANGGOTA' ? '/portal' : '/dashboard');
     }
 

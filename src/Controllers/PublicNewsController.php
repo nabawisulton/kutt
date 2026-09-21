@@ -15,6 +15,40 @@ final class PublicNewsController extends Controller
 {
     private const OG_SITE = 'KUTT SUKA MAKMUR';
 
+    /**
+     * Gambar share utama sebuah berita: gambar unggahan/URL -> thumbnail
+     * frame video lokal (ffmpeg) -> fallback portal. Selalu URL absolut.
+     */
+    private static function ogImageFor(array $post): ?string
+    {
+        if (!empty($post['image_path'])) {
+            return news_og_image($post['image_path']);
+        }
+
+        $poster = \App\Support\Uploader::videoPoster($post['video_url'] ?? null);
+        if ($poster !== null) {
+            return news_og_image($poster);
+        }
+
+        $fallback = (string) \App\Models\Setting::get('ogImagePath', '');
+        if ($fallback !== '') {
+            return base_url('/' . $fallback);
+        }
+
+        return null;
+    }
+
+    /** URL og:video bila video tersimpan lokal (mp4/webm). */
+    private static function ogVideoFor(array $post): ?string
+    {
+        $video = (string) ($post['video_url'] ?? '');
+        if ($video === '' || !str_contains($video, 'uploads/')) {
+            return null;
+        }
+
+        return base_url('/' . ltrim($video, '/'));
+    }
+
     public function index(): void
     {
         $categoryId = ($_GET['kategori'] ?? '') !== '' ? (int) $_GET['kategori'] : null;
@@ -34,7 +68,7 @@ final class PublicNewsController extends Controller
         $this->viewPlain('public/news', [
             'seoTitle'     => 'Berita - ' . self::OG_SITE,
             'seoDesc'      => 'Berita dan kegiatan terbaru KUTT SUKA MAKMUR Grati, Pasuruan.',
-            'seoImage'     => isset($posts[0]['image_path']) ? news_og_image($posts[0]['image_path']) : null,
+            'seoImage'     => isset($posts[0]) ? self::ogImageFor($posts[0]) : null,
             'posts'        => $posts,
             'featured'     => $featured,
             'popular'      => News::mostViewed(5),
@@ -94,7 +128,8 @@ final class PublicNewsController extends Controller
         $this->viewPlain('public/news_detail', [
             'seoTitle'  => (string) $post['title'] . ' - ' . self::OG_SITE,
             'seoDesc'   => (string) ($post['excerpt'] ?: mb_substr(strip_tags((string) $post['body']), 0, 200)),
-            'seoImage'  => $post['image_path'] !== null ? news_og_image($post['image_path']) : null,
+            'seoImage'  => self::ogImageFor($post),
+            'seoVideo'  => self::ogVideoFor($post),
             'seoUrl'    => $url,
             'post'      => $post,
             'tags'      => News::tagsFor((int) $post['id']),
